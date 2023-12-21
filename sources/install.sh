@@ -32,8 +32,8 @@ then
    # Customize config.txt
    if [ ! $(grep "dtoverlay=dal_mipi" /boot/config.txt) ]
    then
-      echo "dtoverlay=dal_mipi" | sudo tee -a /boot/config.txt
+      echo "#dtoverlay=dal_mipi" | sudo tee -a /boot/config.txt
       echo "#dtparam=2lanes # Uncomment it for 2 MIPI lanes. 1 lane by default." | sudo tee -a /boot/config.txt
-      echo "dtparam=i2c-addr=0x16" | sudo tee -a /boot/config.txt
+      echo "#dtparam=i2c-addr=0x16" | sudo tee -a /boot/config.txt
    fi
 fi
