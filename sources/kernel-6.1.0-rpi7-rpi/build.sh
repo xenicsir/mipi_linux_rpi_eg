@@ -3,10 +3,10 @@ for file in *; do
    if [[ -d $file ]]
    then
       pushd $file
-      if [[ -f install.sh ]]
+      if [[ -f build.sh ]]
       then
-         echo Installing $file
-         ./install.sh
+         echo $1 $file
+         ./build.sh $@
       fi
       popd
    fi

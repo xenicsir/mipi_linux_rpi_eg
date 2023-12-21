@@ -1,3 +1,4 @@
 To build and install the kernel modules :
-./build.sh
+./build.sh make
+./build.sh install
 

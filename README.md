@@ -16,8 +16,8 @@ The corresponding kernel headers are installed by default with BookWorm.
 
 - Copy the ***sources*** folder to the RPi and build/install it :
 <pre>
-./build.sh
-./install.sh
+./build.sh make
+./build.sh install
 </pre>
 - Customize /boot/config.txt :
 <pre>
