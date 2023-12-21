@@ -1,0 +1,16 @@
+--- a/bcm2835-unicam.c	2023-12-06 16:07:23.658290030 +0100
++++ b/bcm2835-unicam.c	2023-12-19 16:38:06.567281856 +0100
+@@ -437,6 +437,13 @@
+ 		.depth		= 14,
+ 		.csi_dt		= 0x2d,
+ 		.valid_colorspaces = MASK_CS_RAW,
++	}, {
++		.fourcc		= V4L2_PIX_FMT_Y16_BE,
++		.repacked_fourcc = V4L2_PIX_FMT_Y16_BE,
++		.code		= MEDIA_BUS_FMT_Y16_1X16,
++		.depth		= 16,
++		.csi_dt		= 0x2e,
++		.valid_colorspaces = MASK_CS_RAW,
+ 	},
+ 	/* Embedded data format */
+ 	{
