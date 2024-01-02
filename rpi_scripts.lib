@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# Directories
+CURRENT_PWD=$(pwd)
+LINUX_RPI=${CURRENT_PWD}
+LINUX_RPI_BUILD=${LINUX_RPI}/linux_build

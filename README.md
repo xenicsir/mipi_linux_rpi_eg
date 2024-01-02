@@ -1,8 +1,15 @@
-Model           : Raspberry Pi 4 Model B
+This document present how to build and install the MIPI drivers of Exosens cameras for Raspberry Pi.
 
+## Building framework
 
-### Building MIPI driver for RPI OS BookWorm
-From this OS version, the Linux kernel is not built from the Raspberry Pi Linux, but is a Debian package.
+### 0. Environment used with this building framework
+
+- Rpi model : Raspberry Pi 4 Model B
+- Host computer OS Ubuntu 20.04.1 LTS
+- Cross compiler gcc-9-aarch64-linux-gnu
+
+### 1. Building MIPI driver for RPi OS BookWorm
+For this RPi OS version, the Linux kernel is not built from the Raspberry Pi Linux, but is a Debian package.
 <pre>
 cat /etc/os-release
 PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
@@ -11,10 +18,10 @@ uname -a
 Linux pi <b>6.1.0-rpi7-rpi-v8</b> #1 SMP PREEMPT Debian 1:<b>6.1.63-1+rpt1</b> (2023-11-24) aarch64 GNU/Linux
 </pre>
 
-The Linux version is 6.1.0-rpi7-rpi-v8, which is based on kernel 6.1.63, but is not available for download and cross compilation on a host. So the MIPI driver hast to be built out of tree on the Raspberry Pi.
+The 6.1.0-rpi7-rpi-v8 Linux version, which is based on kernel 6.1.63, is not available for download and cross compilation on a host. So the MIPI driver hast to be built out of tree on the Raspberry Pi.
 The corresponding kernel headers are installed by default with BookWorm.
 
-- Copy the ***sources*** folder to the RPi and build/install it :
+- Copy the **sources** folder to the RPi and build/install it :
 <pre>
 ./build.sh make
 ./build.sh install
@@ -26,22 +33,61 @@ dtoverlay=dal_mipi
 dtparam=i2c-addr=0x16
 </pre>
 
-### Building MIPI driver for RPI OS BullEye
+- Reboot the RPi
 
-./install_env.sh         # install the environment
-./compile_kernel.sh      # compile de Linux kernel
-./copy_kernel.sh         # copy the needed files from the kernel to rootfs_target
-./compile_pi-gen.sh      # generate the whole Raspberry Pi image
+### 2. Building MIPI driver for RPi OS BullEye
 
-The Linux images are in pi-gen/work/Raspi-dal/export-image/
-Use Raspberry Pi Imager to flash an image on an SD card
+For RPI OS BullEye, the driver must be built on a host computer, as the last kernel headers for BullEye (6.1.21) are not available in the packages repository.
+So the Raspberry Pi linux (branch rpi-6.1.y) has to be built on a host computer with a cross compiler.
 
+- Install the RPi Linux environment on the host :
+<pre>
+./install_env_host.sh
+</pre>
 
-### To grab video
+- Cross compile Linux and the MIPI drivers :
+<pre>
+./compile_linux_host.sh
+</pre>
+
+- Install the MIPI drivers in the **sources** folder :
+<pre>
+./install_sources_host.sh
+</pre>
+
+- Copy the **sources** folder to the Raspberry Pi
+- Log to the Raspberry Pi, go to the **sources** folder and install the drivers :
+<pre>
+./build.sh install
+</pre>
+- Customize /boot/config.txt :
+<pre>
+dtoverlay=dal_mipi
+#dtparam=2lanes # Uncomment it for 2 MIPI lanes. 1 lane by default.
+dtparam=i2c-addr=0x16
+</pre>
+
+- Reboot the RPi
+
+### 3. Building MIPI driver on host for RPI OS with other RPi Linux versions
+
+- Find the right branch and commit at https://github.com/raspberrypi/linux.git
+- Modify **install_env_host.sh** :
+<pre>
+git clone -b <b>$your_branch</b> https://github.com/raspberrypi/linux.git ${LINUX_RPI_BUILD}
+pushd ${LINUX_RPI_BUILD}
+git reset --hard <b>$your_commit</b>
+popd
+</pre>
+- Go to chapter 2.
+
+**Note : code in "sources" folder may not compile because of incompatible Linux version**
+
+## To grab video
 
 Install gstreamer if needed:
 <pre>
-apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-tools gstreamer1.0-x gstreamer1.0-alsa gstreamer1.0-gl gstreamer1.0-gtk3 gstreamer1.0-qt5 gstreamer1.0-pulseaudio
+sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-tools gstreamer1.0-x gstreamer1.0-alsa gstreamer1.0-gl gstreamer1.0-gtk3 gstreamer1.0-qt5 gstreamer1.0-pulseaudio
 </pre>
 - YCbCr
 <pre>
@@ -65,7 +111,7 @@ gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)GR
 </pre>
 
 
-### To use de camera :
+## To use the camera :
 libecctrl
 
 ECSwCtrl

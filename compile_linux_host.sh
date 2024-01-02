@@ -1,8 +1,6 @@
 #!/bin/bash
 
-pushd ..
 . ./rpi_scripts.lib
-popd
 
 # Compile Linux kernel
 pushd ${LINUX_RPI_BUILD}

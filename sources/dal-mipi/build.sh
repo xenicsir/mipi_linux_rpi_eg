@@ -9,6 +9,7 @@ then
    if [[ $1 == "make" ]]
    then
       make -C /${MODULES_FOLDER}/build M=$PWD
+      rm -f *.ko.xz
       rm -f lib
    elif [[ $1 == "install" ]]
    then
@@ -24,6 +25,7 @@ then
    then
       make -C /${MODULES_FOLDER}/build M=$PWD clean
       rm -rf lib
+      rm -f *.ko.xz
    fi
 else
    # Do it on host
