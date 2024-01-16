@@ -1,7 +1,7 @@
 #!/bin/bash
 
-. ./rpi_scripts.lib
+. ./environment
 
 pushd sources
-./build.sh clean ${LINUX_RPI_BUILD}
+./build.sh clean ${LINUX_RPI_SRC}
 popd

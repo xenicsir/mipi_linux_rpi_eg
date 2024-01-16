@@ -1,17 +1,17 @@
 #!/bin/bash
 
-. ./rpi_scripts.lib
-
-echo LINUX_RPI_BUILD $LINUX_RPI_BUILD
+. ./environment
 
 # Get official RPI Linux repo
-if [[ ! -d ${LINUX_RPI_BUILD} ]]
+if [[ ! -d ${LINUX_RPI_SRC} ]]
 then
-   git clone -b rpi-6.1.y https://github.com/raspberrypi/linux.git ${LINUX_RPI_BUILD}
-   pushd ${LINUX_RPI_BUILD}
+   git clone -b rpi-6.1.y https://github.com/raspberrypi/linux.git ${LINUX_RPI_SRC}
+   pushd ${LINUX_RPI_SRC}
    git reset --hard ee8dea337199 # 6.1.21, latest version for BullEye
    popd
 fi
 
+mkdir -p $LINUX_RPI_INSTALL_KERNEL
+mkdir -p $LINUX_RPI_INSTALL_MODULES
 
 

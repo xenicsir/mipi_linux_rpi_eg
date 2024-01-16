@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * A V4L2 driver for Xenics Exosens MIPI cameras.
+ * A V4L2 driver for Xenics Exosens MIPI EngineCore cameras.
  *
- * Based on Sony dummy sensor driver
+ * Based on dummy eg_ec driver
  * Copyright (C) 2023 Xenics Exosens
  *
  */
@@ -34,28 +34,40 @@
 #define EC_PREDEFINED_FORMAT_RGB   21
 #define EC_PREDEFINED_FORMAT_YCBCR 22
 
+
+#define DEFAULT_WIDTH	640
+#define DEFAULT_HEIGHT	480
+/* Default format will be the first entry in eg_ec_mbus_codes */
+
 /* Array of all the mbus formats that we'll accept */
-u32 mbus_codes[] = {
+u32 eg_ec_mbus_codes[] = {
    MEDIA_BUS_FMT_UYVY8_1X16,
    MEDIA_BUS_FMT_RGB888_1X24,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,1,63)
    MEDIA_BUS_FMT_Y16_1X16,
 #endif
 };
+#define NUM_MBUS_CODES ARRAY_SIZE(eg_ec_mbus_codes)
 
-#define NUM_MBUS_CODES ARRAY_SIZE(mbus_codes)
+/* Mode : resolution and related config&values */
+struct eg_ec_mode {
+        u32 width; // Frame width in pixels
+        u32 height; // Frame height in pixels
+};
 
-#define MIN_WIDTH	16
-#define MAX_WIDTH	16383
-#define MIN_HEIGHT	16
-#define MAX_HEIGHT	16383
+static const struct eg_ec_mode eg_ec_supported_modes[] = {
+        {
+               .width = 640,
+               .height = 480,
+        },
+        {
+               .width = 1280,
+               .height = 1024,
+        },
+};
 
-#define DEFAULT_WIDTH	640
-#define DEFAULT_HEIGHT	480
-/* Default format will be the first entry in mbus_codes */
 
-
-struct dal_i2c_client {
+struct eg_ec_i2c_client {
    struct i2c_client *i2c_client;
    struct i2c_adapter *root_adap;
    char chnod_name[128];
@@ -65,9 +77,9 @@ struct dal_i2c_client {
    struct class *pClass_chnod;
 };
 
-struct dal_i2c_client i2c_clients[MAX_I2C_CLIENTS_NUMBER];
+struct eg_ec_i2c_client i2c_clients[MAX_I2C_CLIENTS_NUMBER];
 
-struct sensor {
+struct eg_ec {
    struct i2c_client *i2c_client;
    struct v4l2_subdev sd;
    struct media_pad pad;
@@ -77,18 +89,19 @@ struct sensor {
    struct v4l2_ctrl_handler ctrl_handler;
    /*
     * Mutex for serialized access:
-    * Protect sensor module set pad format and start/stop streaming safely.
+    * Protect eg_ec module set pad format and start/stop streaming safely.
     */
    struct mutex mutex;
+   int mbus_code_index;
 };
 
 
-static inline struct sensor *to_sensor(struct v4l2_subdev *_sd)
+static inline struct eg_ec *to_eg_ec(struct v4l2_subdev *_sd)
 {
-   return container_of(_sd, struct sensor, sd);
+   return container_of(_sd, struct eg_ec, sd);
 }
 
-static ssize_t dal_chnod_read(
+static ssize_t eg_ec_chnod_read(
       struct file *file_ptr
       , char __user *user_buffer
       , size_t count
@@ -138,7 +151,7 @@ static ssize_t dal_chnod_read(
    return ret;
 }
 
-static ssize_t dal_chnod_write(
+static ssize_t eg_ec_chnod_write(
       struct file *file_ptr
       , const char __user *user_buffer
       , size_t count
@@ -152,7 +165,7 @@ static ssize_t dal_chnod_write(
    {
       if (strcmp(i2c_clients[i].chnod_name, file_ptr->f_path.dentry->d_name.name) == 0)
       {
-         // printk( KERN_NOTICE "dal chnod: Device file write at offset = %i, bytes count = %u\n"
+         // printk( KERN_NOTICE "chnod: Device file write at offset = %i, bytes count = %u\n"
          // , (int)*position
          // , (unsigned int)count );
 
@@ -187,7 +200,7 @@ static ssize_t dal_chnod_write(
    return ret;
 }
 
-int dal_chnod_open (struct inode * pInode, struct file * file)
+int eg_ec_chnod_open (struct inode * pInode, struct file * file)
 {
    int i;
    for (i = 0; i < MAX_I2C_CLIENTS_NUMBER; i++)
@@ -209,7 +222,7 @@ int dal_chnod_open (struct inode * pInode, struct file * file)
    return -EINVAL;
 }
 
-int dal_chnod_release (struct inode * pInode, struct file * file)
+int eg_ec_chnod_release (struct inode * pInode, struct file * file)
 {
    int i;
    for (i = 0; i < MAX_I2C_CLIENTS_NUMBER; i++)
@@ -223,7 +236,7 @@ int dal_chnod_release (struct inode * pInode, struct file * file)
    return -EINVAL;
 }
 
-static long dal_chnod_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long eg_ec_chnod_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
    int i;
    switch (cmd) {
@@ -247,27 +260,27 @@ static long dal_chnod_ioctl(struct file *file, unsigned int cmd, unsigned long a
 }
 
 
-static struct file_operations dal_chnod_register_fops = 
+static struct file_operations eg_ec_chnod_register_fops = 
 {
    .owner   = THIS_MODULE,
-   .read    = dal_chnod_read,
-   .write   = dal_chnod_write,
-   .open    = dal_chnod_open,
-   .release = dal_chnod_release,
-   .unlocked_ioctl = dal_chnod_ioctl,
+   .read    = eg_ec_chnod_read,
+   .write   = eg_ec_chnod_write,
+   .open    = eg_ec_chnod_open,
+   .release = eg_ec_chnod_release,
+   .unlocked_ioctl = eg_ec_chnod_ioctl,
 };
-static inline int dal_chnod_register_device(int i2c_ind)
+static inline int eg_ec_chnod_register_device(int i2c_ind)
 {
    struct device *pDev;
    int result = 0;
-   result = register_chrdev( 0, i2c_clients[i2c_ind].chnod_name, &dal_chnod_register_fops );
+   result = register_chrdev( 0, i2c_clients[i2c_ind].chnod_name, &eg_ec_chnod_register_fops );
    if( result < 0 )
    {
-      printk( KERN_WARNING "dal register chnod:  can\'t register character device with error code = %i\n", result );
+      printk( KERN_WARNING "register chnod:  can\'t register character device with error code = %i\n", result );
       return result;
    }
    i2c_clients[i2c_ind].chnod_major_number = result;
-   printk( KERN_DEBUG "dal register chnod: registered character device with major number = %i and minor numbers 0...255\n", i2c_clients[i2c_ind].chnod_major_number );
+   printk( KERN_DEBUG "register chnod: registered character device with major number = %i and minor numbers 0...255\n", i2c_clients[i2c_ind].chnod_major_number );
 
    i2c_clients[i2c_ind].chnod_device_number = MKDEV(i2c_clients[i2c_ind].chnod_major_number, 0);
 
@@ -288,7 +301,7 @@ static inline int dal_chnod_register_device(int i2c_ind)
 }
 
 
-static inline int dal_mipi_write_reg(struct i2c_client * i2c_client, uint16_t address, uint8_t *data, int size)
+static inline int eg_ec_mipi_write_reg(struct i2c_client * i2c_client, uint16_t address, uint8_t *data, int size)
 {
    ecctrl_i2c_t args;
    int i;
@@ -320,7 +333,7 @@ static inline int dal_mipi_write_reg(struct i2c_client * i2c_client, uint16_t ad
    return -EINVAL;
 }
 
-static inline int dal_mipi_read_reg(struct i2c_client * i2c_client, uint16_t address, uint8_t *data, uint8_t size)
+static inline int eg_ec_mipi_read_reg(struct i2c_client * i2c_client, uint16_t address, uint8_t *data, uint8_t size)
 {
    ecctrl_i2c_t args;
    int i;
@@ -352,7 +365,7 @@ static inline int dal_mipi_read_reg(struct i2c_client * i2c_client, uint16_t add
    return -EINVAL;
 }
 
-static inline int dal_mipi_write_fifo(struct i2c_client * i2c_client, uint16_t address, uint8_t *data, uint32_t size)
+static inline int eg_ec_mipi_write_fifo(struct i2c_client * i2c_client, uint16_t address, uint8_t *data, uint32_t size)
 {
    ecctrl_i2c_t args;
    int i;
@@ -386,7 +399,7 @@ static inline int dal_mipi_write_fifo(struct i2c_client * i2c_client, uint16_t a
 
 }
 
-static inline int dal_mipi_read_fifo(struct i2c_client * i2c_client, uint16_t address, uint8_t *data, uint32_t size)
+static inline int eg_ec_mipi_read_fifo(struct i2c_client * i2c_client, uint16_t address, uint8_t *data, uint32_t size)
 {
    ecctrl_i2c_t args;
    int i;
@@ -419,14 +432,14 @@ static inline int dal_mipi_read_fifo(struct i2c_client * i2c_client, uint16_t ad
    return -EINVAL;
 }
 
-static int sensor_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
+static int eg_ec_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
-   struct sensor *sensor = to_sensor(sd);
+   struct eg_ec *eg_ec = to_eg_ec(sd);
    struct v4l2_mbus_framefmt *try_img_fmt =
       v4l2_subdev_get_try_format(sd, fh->state, 0);
    struct v4l2_rect *try_crop;
 
-   *try_img_fmt = sensor->fmt;
+   *try_img_fmt = eg_ec->fmt;
 
    /* Initialize try_crop rectangle. */
    try_crop = v4l2_subdev_get_try_crop(sd, fh->state, 0);
@@ -438,15 +451,15 @@ static int sensor_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
    return 0;
 }
 
-static int sensor_set_ctrl(struct v4l2_ctrl *ctrl)
+static int eg_ec_set_ctrl(struct v4l2_ctrl *ctrl)
 {
-   struct sensor *sensor =
-      container_of(ctrl->handler, struct sensor, ctrl_handler);
+   struct eg_ec *eg_ec =
+      container_of(ctrl->handler, struct eg_ec, ctrl_handler);
    int ret;
 
    switch (ctrl->id) {
       default:
-         dev_info(&sensor->i2c_client->dev,
+         dev_info(&eg_ec->i2c_client->dev,
                "ctrl(id:0x%x,val:0x%x) is not handled\n",
                ctrl->id, ctrl->val);
          ret = -EINVAL;
@@ -456,11 +469,11 @@ static int sensor_set_ctrl(struct v4l2_ctrl *ctrl)
    return ret;
 }
 
-static const struct v4l2_ctrl_ops sensor_ctrl_ops = {
-   .s_ctrl = sensor_set_ctrl,
+static const struct v4l2_ctrl_ops eg_ec_ctrl_ops = {
+   .s_ctrl = eg_ec_set_ctrl,
 };
 
-static int sensor_enum_mbus_code(struct v4l2_subdev *sd,
+static int eg_ec_enum_mbus_code(struct v4l2_subdev *sd,
       struct v4l2_subdev_state *sd_state,
       struct v4l2_subdev_mbus_code_enum *code)
 {
@@ -469,33 +482,58 @@ static int sensor_enum_mbus_code(struct v4l2_subdev *sd,
    if (code->pad)
       return -EINVAL;
 
-   code->code = mbus_codes[code->index];
+   code->code = eg_ec_mbus_codes[code->index];
 
    return 0;
 }
 
-static int sensor_enum_frame_size(struct v4l2_subdev *sd,
+static int eg_ec_enum_frame_size(struct v4l2_subdev *sd,
       struct v4l2_subdev_state *sd_state,
       struct v4l2_subdev_frame_size_enum *fse)
 {
+   int err;
+   uint32_t detectorWidth = DEFAULT_WIDTH;
+   uint32_t detectorHeight = DEFAULT_HEIGHT;
+   struct eg_ec *eg_ec = to_eg_ec(sd);
    if (fse->index)
       return -EINVAL;
    if (fse->pad)
       return -EINVAL;
 
-   fse->min_width = MIN_WIDTH;
-   fse->max_width = MAX_WIDTH;
-   fse->min_height = MIN_HEIGHT;
-   fse->max_height = MAX_HEIGHT;
+   if (fse->index >= ARRAY_SIZE(eg_ec_supported_modes))
+          return -EINVAL;
+
+   // Get detector width from the camera
+   err = eg_ec_mipi_read_reg(eg_ec->i2c_client, EC_FEATURE_DETECTOR_WIDTH, (uint8_t*)&detectorWidth, sizeof(detectorWidth));
+   if (!err)
+   {
+      fse->min_width = detectorWidth;
+      fse->max_width = detectorWidth;
+   }
+   else
+   {
+      dev_err(&eg_ec->i2c_client->dev, "Failed to get detector's width.\n");
+   }
+   // Get detector height from the camera
+   err = eg_ec_mipi_read_reg(eg_ec->i2c_client, EC_FEATURE_DETECTOR_HEIGHT, (uint8_t*)&detectorHeight, sizeof(detectorHeight));
+   if (!err)
+   {
+      fse->min_height = detectorHeight;
+      fse->max_height = detectorHeight;
+   }
+   else
+   {
+      dev_err(&eg_ec->i2c_client->dev, "Failed to get detector's height.\n");
+   }
 
    return 0;
 }
 
-static int sensor_get_pad_format(struct v4l2_subdev *sd,
+static int eg_ec_get_pad_format(struct v4l2_subdev *sd,
       struct v4l2_subdev_state *sd_state,
       struct v4l2_subdev_format *fmt)
 {
-   struct sensor *sensor = to_sensor(sd);
+   struct eg_ec *eg_ec = to_eg_ec(sd);
    uint32_t predefinedFormat = EC_PREDEFINED_FORMAT_YCBCR;
    uint32_t detectorWidth = DEFAULT_WIDTH;
    uint32_t detectorHeight = DEFAULT_HEIGHT;
@@ -506,70 +544,70 @@ static int sensor_get_pad_format(struct v4l2_subdev *sd,
 
    if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
       struct v4l2_mbus_framefmt *try_fmt =
-         v4l2_subdev_get_try_format(&sensor->sd, sd_state,
+         v4l2_subdev_get_try_format(&eg_ec->sd, sd_state,
                fmt->pad);
       fmt->format = *try_fmt;
    }
    else
    {
       // Get prededined format from the camera
-      err = dal_mipi_read_reg(sensor->i2c_client, EC_FEATURE_PREDIFINED_FORMAT, (uint8_t*)&predefinedFormat, sizeof(predefinedFormat));
+      err = eg_ec_mipi_read_reg(eg_ec->i2c_client, EC_FEATURE_PREDIFINED_FORMAT, (uint8_t*)&predefinedFormat, sizeof(predefinedFormat));
       if (err)
       {
          predefinedFormat = EC_PREDEFINED_FORMAT_YCBCR;
-         dev_err(&sensor->i2c_client->dev, "Failed to get predifined video format. Default YUYV\n");
+         dev_err(&eg_ec->i2c_client->dev, "Failed to get predifined video format. Default YUYV\n");
       }
 
       switch (predefinedFormat)
       {
          case EC_PREDEFINED_FORMAT_YCBCR:
-            sensor->fmt.code = MEDIA_BUS_FMT_UYVY8_1X16;
+            eg_ec->fmt.code = MEDIA_BUS_FMT_UYVY8_1X16;
             break;
          case EC_PREDEFINED_FORMAT_RGB:
-            sensor->fmt.code = MEDIA_BUS_FMT_RGB888_1X24;
+            eg_ec->fmt.code = MEDIA_BUS_FMT_RGB888_1X24;
             break;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,1,63)
          case EC_PREDEFINED_FORMAT_Y16:
-            sensor->fmt.code = MEDIA_BUS_FMT_Y16_1X16;
+            eg_ec->fmt.code = MEDIA_BUS_FMT_Y16_1X16;
             break;
 #endif
          default :
-            sensor->fmt.code = MEDIA_BUS_FMT_UYVY8_1X16;
+            eg_ec->fmt.code = MEDIA_BUS_FMT_UYVY8_1X16;
             break;
       }
 
       // Get detector width from the camera
-      err = dal_mipi_read_reg(sensor->i2c_client, EC_FEATURE_DETECTOR_WIDTH, (uint8_t*)&detectorWidth, sizeof(detectorWidth));
+      err = eg_ec_mipi_read_reg(eg_ec->i2c_client, EC_FEATURE_DETECTOR_WIDTH, (uint8_t*)&detectorWidth, sizeof(detectorWidth));
       if (!err)
       {
-         sensor->fmt.width = detectorWidth;
+         eg_ec->fmt.width = detectorWidth;
       }
       else
       {
-         dev_err(&sensor->i2c_client->dev, "Failed to get detector's width.\n");
+         dev_err(&eg_ec->i2c_client->dev, "Failed to get detector's width.\n");
       }
       // Get detector height from the camera
-      err = dal_mipi_read_reg(sensor->i2c_client, EC_FEATURE_DETECTOR_HEIGHT, (uint8_t*)&detectorHeight, sizeof(detectorHeight));
+      err = eg_ec_mipi_read_reg(eg_ec->i2c_client, EC_FEATURE_DETECTOR_HEIGHT, (uint8_t*)&detectorHeight, sizeof(detectorHeight));
       if (!err)
       {
-         sensor->fmt.height = detectorHeight;
+         eg_ec->fmt.height = detectorHeight;
       }
       else
       {
-         dev_err(&sensor->i2c_client->dev, "Failed to get detector's height.\n");
+         dev_err(&eg_ec->i2c_client->dev, "Failed to get detector's height.\n");
       }
 
-      fmt->format = sensor->fmt;
+      fmt->format = eg_ec->fmt;
    }
 
    return 0;
 }
 
-static int sensor_set_pad_format(struct v4l2_subdev *sd,
+static int eg_ec_set_pad_format(struct v4l2_subdev *sd,
       struct v4l2_subdev_state *sd_state,
       struct v4l2_subdev_format *fmt)
 {
-   struct sensor *sensor = to_sensor(sd);
+   struct eg_ec *eg_ec = to_eg_ec(sd);
    struct v4l2_mbus_framefmt *format;
    int i;
 
@@ -577,13 +615,15 @@ static int sensor_set_pad_format(struct v4l2_subdev *sd,
       return -EINVAL;
 
    for (i = 0; i < NUM_MBUS_CODES; i++)
-      if (mbus_codes[i] == fmt->format.code)
+      if (eg_ec_mbus_codes[i] == fmt->format.code)
          break;
 
    if (i >= NUM_MBUS_CODES)
       i = 0;
 
-   fmt->format.code = mbus_codes[i];
+   eg_ec->mbus_code_index = i;
+
+   fmt->format.code = eg_ec_mbus_codes[eg_ec->mbus_code_index];
    fmt->format.field = V4L2_FIELD_NONE;
    fmt->format.colorspace = V4L2_COLORSPACE_SRGB;
    fmt->format.ycbcr_enc =
@@ -595,20 +635,20 @@ static int sensor_set_pad_format(struct v4l2_subdev *sd,
       V4L2_MAP_XFER_FUNC_DEFAULT(fmt->format.colorspace);
 
    if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
-      format = v4l2_subdev_get_try_format(&sensor->sd, sd_state, fmt->pad);
+      format = v4l2_subdev_get_try_format(&eg_ec->sd, sd_state, fmt->pad);
    else
-      format = &sensor->fmt;
+      format = &eg_ec->fmt;
 
    *format = fmt->format;
 
    return 0;
 }
 
-static int sensor_get_selection(struct v4l2_subdev *sd,
+static int eg_ec_get_selection(struct v4l2_subdev *sd,
       struct v4l2_subdev_state *sd_state,
       struct v4l2_subdev_selection *sel)
 {
-   struct sensor *sensor = to_sensor(sd);
+   struct eg_ec *eg_ec = to_eg_ec(sd);
 
    switch (sel->target) {
       case V4L2_SEL_TGT_CROP:
@@ -616,8 +656,8 @@ static int sensor_get_selection(struct v4l2_subdev *sd,
       case V4L2_SEL_TGT_CROP_DEFAULT:
          sel->r.top = 0;
          sel->r.left = 0;
-         sel->r.width = sensor->fmt.width;
-         sel->r.height = sensor->fmt.height;
+         sel->r.width = eg_ec->fmt.width;
+         sel->r.height = eg_ec->fmt.height;
 
          return 0;
    }
@@ -625,7 +665,7 @@ static int sensor_get_selection(struct v4l2_subdev *sd,
    return -EINVAL;
 }
 
-static int sensor_set_stream(struct v4l2_subdev *sd, int enable)
+static int eg_ec_set_stream(struct v4l2_subdev *sd, int enable)
 {
    /*
     * Don't need to do anything here, just assume the source is streaming
@@ -634,93 +674,93 @@ static int sensor_set_stream(struct v4l2_subdev *sd, int enable)
    return 0;
 }
 
-static const struct v4l2_subdev_core_ops sensor_core_ops = {
+static const struct v4l2_subdev_core_ops eg_ec_core_ops = {
    .subscribe_event = v4l2_ctrl_subdev_subscribe_event,
    .unsubscribe_event = v4l2_event_subdev_unsubscribe,
 };
 
-static const struct v4l2_subdev_video_ops sensor_video_ops = {
-   .s_stream = sensor_set_stream,
+static const struct v4l2_subdev_video_ops eg_ec_video_ops = {
+   .s_stream = eg_ec_set_stream,
 };
 
-static const struct v4l2_subdev_pad_ops sensor_pad_ops = {
-   .enum_mbus_code = sensor_enum_mbus_code,
-   .get_fmt = sensor_get_pad_format,
-   .set_fmt = sensor_set_pad_format,
-   .get_selection = sensor_get_selection,
-   .enum_frame_size = sensor_enum_frame_size,
+static const struct v4l2_subdev_pad_ops eg_ec_pad_ops = {
+   .enum_mbus_code = eg_ec_enum_mbus_code,
+   .get_fmt = eg_ec_get_pad_format,
+   .set_fmt = eg_ec_set_pad_format,
+   .get_selection = eg_ec_get_selection,
+   .enum_frame_size = eg_ec_enum_frame_size,
 };
 
-static const struct v4l2_subdev_ops sensor_subdev_ops = {
-   .core = &sensor_core_ops,
-   .video = &sensor_video_ops,
-   .pad = &sensor_pad_ops,
+static const struct v4l2_subdev_ops eg_ec_subdev_ops = {
+   .core = &eg_ec_core_ops,
+   .video = &eg_ec_video_ops,
+   .pad = &eg_ec_pad_ops,
 };
 
-static const struct v4l2_subdev_internal_ops sensor_internal_ops = {
-   .open = sensor_open,
+static const struct v4l2_subdev_internal_ops eg_ec_internal_ops = {
+   .open = eg_ec_open,
 };
 
 /* Initialize control handlers */
-static int sensor_init_controls(struct sensor *sensor)
+static int eg_ec_init_controls(struct eg_ec *eg_ec)
 {
    struct v4l2_ctrl_handler *ctrl_hdlr;
    struct v4l2_ctrl *ctrl;
    int ret;
 
-   ctrl_hdlr = &sensor->ctrl_handler;
+   ctrl_hdlr = &eg_ec->ctrl_handler;
    ret = v4l2_ctrl_handler_init(ctrl_hdlr, 4);
    if (ret)
       return ret;
 
-   mutex_init(&sensor->mutex);
-   ctrl_hdlr->lock = &sensor->mutex;
+   mutex_init(&eg_ec->mutex);
+   ctrl_hdlr->lock = &eg_ec->mutex;
 
    /* By default, PIXEL_RATE is read only */
-   v4l2_ctrl_new_std(ctrl_hdlr, &sensor_ctrl_ops, V4L2_CID_PIXEL_RATE,
+   v4l2_ctrl_new_std(ctrl_hdlr, &eg_ec_ctrl_ops, V4L2_CID_PIXEL_RATE,
          1, 1, 1, 1);
 
    /* Initial vblank/hblank/exposure parameters based on current mode */
-   ctrl = v4l2_ctrl_new_std(ctrl_hdlr, &sensor_ctrl_ops, V4L2_CID_VBLANK,
+   ctrl = v4l2_ctrl_new_std(ctrl_hdlr, &eg_ec_ctrl_ops, V4L2_CID_VBLANK,
          1, 1, 1, 1);
    if (ctrl)
       ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-   ctrl = v4l2_ctrl_new_std(ctrl_hdlr, &sensor_ctrl_ops, V4L2_CID_HBLANK,
+   ctrl = v4l2_ctrl_new_std(ctrl_hdlr, &eg_ec_ctrl_ops, V4L2_CID_HBLANK,
          1, 1, 1, 1);
    if (ctrl)
       ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-   ctrl = v4l2_ctrl_new_std(ctrl_hdlr, &sensor_ctrl_ops, V4L2_CID_EXPOSURE,
+   ctrl = v4l2_ctrl_new_std(ctrl_hdlr, &eg_ec_ctrl_ops, V4L2_CID_EXPOSURE,
          1, 1, 1, 1);
    if (ctrl)
       ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
    if (ctrl_hdlr->error) {
       ret = ctrl_hdlr->error;
-      dev_err(&sensor->i2c_client->dev, "%s control init failed (%d)\n",
+      dev_err(&eg_ec->i2c_client->dev, "%s control init failed (%d)\n",
             __func__, ret);
       goto error;
    }
 
-   sensor->sd.ctrl_handler = ctrl_hdlr;
+   eg_ec->sd.ctrl_handler = ctrl_hdlr;
 
    return 0;
 
 error:
    v4l2_ctrl_handler_free(ctrl_hdlr);
-   mutex_destroy(&sensor->mutex);
+   mutex_destroy(&eg_ec->mutex);
 
    return ret;
 }
 
-static void sensor_free_controls(struct sensor *sensor)
+static void eg_ec_free_controls(struct eg_ec *eg_ec)
 {
-   v4l2_ctrl_handler_free(sensor->sd.ctrl_handler);
-   mutex_destroy(&sensor->mutex);
+   v4l2_ctrl_handler_free(eg_ec->sd.ctrl_handler);
+   mutex_destroy(&eg_ec->mutex);
 }
 
-static int sensor_check_hwcfg(struct device *dev)
+static int eg_ec_check_hwcfg(struct device *dev)
 {
    struct fwnode_handle *endpoint;
    struct v4l2_fwnode_endpoint ep_cfg = {
@@ -748,11 +788,10 @@ error_out:
    return ret;
 }
 
-// static int sensor_probe(struct platform_device *pdev)
-static int sensor_probe(struct i2c_client *client, const struct i2c_device_id *id)
+static int eg_ec_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
    struct device *dev = &client->dev;
-   struct sensor *sensor;
+   struct eg_ec *eg_ec;
    int ret;
    int i;
    int err;
@@ -766,7 +805,7 @@ static int sensor_probe(struct i2c_client *client, const struct i2c_device_id *i
          i2c_clients[i].i2c_client = client;
          i2c_clients[i].root_adap = i2c_root_adapter(dev);
          sprintf(i2c_clients[i].chnod_name,  "%s-%s", dev_driver_string(dev), dev_name(dev));
-         err = dal_chnod_register_device(i);
+         err = eg_ec_chnod_register_device(i);
          if (err)
          {
             dev_err(dev, "chnod register failed\n");
@@ -775,7 +814,7 @@ static int sensor_probe(struct i2c_client *client, const struct i2c_device_id *i
          }
 
          // Try to communicate with the camera
-         err = dal_mipi_read_reg(i2c_clients[i].i2c_client, 0, (uint8_t*)&upgradeMode, sizeof(upgradeMode));
+         err = eg_ec_mipi_read_reg(i2c_clients[i].i2c_client, 0, (uint8_t*)&upgradeMode, sizeof(upgradeMode));
          if (err)
          {
             dev_err(dev, "Failed to communicate with the camera\n");
@@ -787,65 +826,63 @@ static int sensor_probe(struct i2c_client *client, const struct i2c_device_id *i
       }
    }
 
-
-   sensor = devm_kzalloc(dev, sizeof(*sensor), GFP_KERNEL);
-   if (!sensor)
+   eg_ec = devm_kzalloc(dev, sizeof(*eg_ec), GFP_KERNEL);
+   if (!eg_ec)
       return -ENOMEM;
 
-   sensor->i2c_client = client;
+   eg_ec->i2c_client = client;
 
-   v4l2_subdev_init(&sensor->sd, &sensor_subdev_ops);
+   v4l2_subdev_init(&eg_ec->sd, &eg_ec_subdev_ops);
    /* the owner is the same as the i2c_client's driver owner */
-   sensor->sd.owner = dev->driver->owner;
-   sensor->sd.dev =dev;
-   v4l2_set_subdevdata(&sensor->sd, client);
+   eg_ec->sd.owner = dev->driver->owner;
+   eg_ec->sd.dev =dev;
+   v4l2_set_subdevdata(&eg_ec->sd, client);
 
    /* initialize name */
-   snprintf(sensor->sd.name, sizeof(sensor->sd.name), "%s",
+   snprintf(eg_ec->sd.name, sizeof(eg_ec->sd.name), "%s",
          dev->driver->name);
 
    /* Check the hardware configuration in device tree */
-   if (sensor_check_hwcfg(dev))
+   if (eg_ec_check_hwcfg(dev))
       return -EINVAL;
 
-   sensor->fmt.width = DEFAULT_WIDTH;
-   sensor->fmt.height = DEFAULT_HEIGHT;
-   sensor->fmt.code = mbus_codes[0];
-   sensor->fmt.field = V4L2_FIELD_NONE;
-   //	sensor->fmt.colorspace = V4L2_COLORSPACE_SRGB;
-   sensor->fmt.colorspace = V4L2_COLORSPACE_RAW;
-   sensor->fmt.ycbcr_enc =
-      V4L2_MAP_YCBCR_ENC_DEFAULT(sensor->fmt.colorspace);
-   sensor->fmt.quantization =
+   eg_ec->fmt.width = eg_ec_supported_modes[0].width;
+   eg_ec->fmt.height = eg_ec_supported_modes[0].height;
+   eg_ec->fmt.code = eg_ec_mbus_codes[0];
+   eg_ec->fmt.field = V4L2_FIELD_NONE;
+   eg_ec->fmt.colorspace = V4L2_COLORSPACE_RAW;
+   eg_ec->fmt.ycbcr_enc =
+      V4L2_MAP_YCBCR_ENC_DEFAULT(eg_ec->fmt.colorspace);
+   eg_ec->fmt.quantization =
       V4L2_MAP_QUANTIZATION_DEFAULT(true,
-            sensor->fmt.colorspace,
-            sensor->fmt.ycbcr_enc);
-   sensor->fmt.xfer_func =
-      V4L2_MAP_XFER_FUNC_DEFAULT(sensor->fmt.colorspace);
+            eg_ec->fmt.colorspace,
+            eg_ec->fmt.ycbcr_enc);
+   eg_ec->fmt.xfer_func =
+      V4L2_MAP_XFER_FUNC_DEFAULT(eg_ec->fmt.colorspace);
 
-   ret = sensor_init_controls(sensor);
+   ret = eg_ec_init_controls(eg_ec);
    if (ret)
       return ret;
 
    /* Initialize subdev */
-   sensor->sd.internal_ops = &sensor_internal_ops;
-   sensor->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE |
+   eg_ec->sd.internal_ops = &eg_ec_internal_ops;
+   eg_ec->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE |
       V4L2_SUBDEV_FL_HAS_EVENTS;
-   sensor->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
+   eg_ec->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
 
    /* Initialize source pads */
-   sensor->pad.flags = MEDIA_PAD_FL_SOURCE;
+   eg_ec->pad.flags = MEDIA_PAD_FL_SOURCE;
 
-   ret = media_entity_pads_init(&sensor->sd.entity, 1,
-         &sensor->pad);
+   ret = media_entity_pads_init(&eg_ec->sd.entity, 1,
+         &eg_ec->pad);
    if (ret) {
       dev_err(dev, "failed to init entity pads: %d\n", ret);
       goto error_handler_free;
    }
 
-   ret = v4l2_async_register_subdev_sensor(&sensor->sd);
+   ret = v4l2_async_register_subdev_sensor(&eg_ec->sd);
    if (ret < 0) {
-      dev_err(dev, "failed to register sensor sub-device: %d\n", ret);
+      dev_err(dev, "failed to register eg_ec sub-device: %d\n", ret);
       goto error_media_entity;
    }
 
@@ -854,10 +891,10 @@ static int sensor_probe(struct i2c_client *client, const struct i2c_device_id *i
    return 0;
 
 error_media_entity:
-   media_entity_cleanup(&sensor->sd.entity);
+   media_entity_cleanup(&eg_ec->sd.entity);
 
 error_handler_free:
-   sensor_free_controls(sensor);
+   eg_ec_free_controls(eg_ec);
 
 err_camera_register:
    device_destroy(i2c_clients[i].pClass_chnod, i2c_clients[i].chnod_device_number);
@@ -869,20 +906,20 @@ err_camera_register:
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6,1,1)
-static int sensor_remove(struct i2c_client *client)
+static int eg_ec_remove(struct i2c_client *client)
 #else
-static void sensor_remove(struct i2c_client *client)
+static void eg_ec_remove(struct i2c_client *client)
 #endif
 {
    struct v4l2_subdev *sd = i2c_get_clientdata(client);
    struct device *dev = &client->dev;
-   struct sensor *sensor = to_sensor(sd);
+   struct eg_ec *eg_ec = to_eg_ec(sd);
    char tmp[128];
    int i;
 
-   v4l2_async_unregister_subdev(&sensor->sd);
-   media_entity_cleanup(&sensor->sd.entity);
-   sensor_free_controls(sensor);
+   v4l2_async_unregister_subdev(&eg_ec->sd);
+   media_entity_cleanup(&eg_ec->sd.entity);
+   eg_ec_free_controls(eg_ec);
 
    for (i = 0; i < MAX_I2C_CLIENTS_NUMBER; i++)
    {
@@ -908,23 +945,23 @@ static void sensor_remove(struct i2c_client *client)
 #endif
 }
 
-static const struct of_device_id sensor_dt_ids[] = {
-   { .compatible = "dal,dal_mipi" },
+static const struct of_device_id eg_ec_dt_ids[] = {
+   { .compatible = "xenics,eg-ec-mipi" },
    { /* sentinel */ }
 };
-MODULE_DEVICE_TABLE(of, sensor_dt_ids);
+MODULE_DEVICE_TABLE(of, eg_ec_dt_ids);
 
-static struct i2c_driver sensor_driver = {
-   .probe = sensor_probe,
-   .remove = sensor_remove,
+static struct i2c_driver eg_ec_driver = {
+   .probe = eg_ec_probe,
+   .remove = eg_ec_remove,
    .driver = {
-      .name = "dal_mipi_i2c",
-      .of_match_table	= sensor_dt_ids,
+      .name = "eg-ec-mipi",
+      .of_match_table	= eg_ec_dt_ids,
    },
 };
 
-module_i2c_driver(sensor_driver);
+module_i2c_driver(eg_ec_driver);
 
 MODULE_AUTHOR("Xenics Exosens");
-MODULE_DESCRIPTION("Xenics Exosens MIPI camera I2C driver");
+MODULE_DESCRIPTION("Xenics Exosens MIPI camera I2C driver for EngineCore cameras");
 MODULE_LICENSE("GPL v2");

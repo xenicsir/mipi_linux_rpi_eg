@@ -8,6 +8,10 @@ This document present how to build and install the MIPI drivers of Exosens camer
 - Host computer OS Ubuntu 20.04.1 LTS
 - Cross compiler gcc-9-aarch64-linux-gnu
 
+Note about cross compiler versions :
+- BookWorm 12 was compiled with gcc-12 (12.2.0-14)
+- BullsEye 11 was compiled with gcc-8 (8.4.0)
+
 ### 1. Building MIPI driver for RPi OS BookWorm
 For this RPi OS version, the Linux kernel is not built from the Raspberry Pi Linux, but is a Debian package.
 <pre>
@@ -28,16 +32,16 @@ The corresponding kernel headers are installed by default with BookWorm.
 </pre>
 - Customize /boot/config.txt :
 <pre>
-dtoverlay=dal_mipi
+dtoverlay=eg-ec-mipi
 #dtparam=2lanes # Uncomment it for 2 MIPI lanes. 1 lane by default.
 dtparam=i2c-addr=0x16
 </pre>
 
 - Reboot the RPi
 
-### 2. Building MIPI driver for RPi OS BullEye
+### 2. Building MIPI driver for RPi OS BullsEye
 
-For RPI OS BullEye, the driver must be built on a host computer, as the last kernel headers for BullEye (6.1.21) are not available in the packages repository.
+For RPI OS BullsEye, the driver must be built on a host computer, as the last kernel headers for BullsEye (6.1.21) are not available in the packages repository.
 So the Raspberry Pi linux (branch rpi-6.1.y) has to be built on a host computer with a cross compiler.
 
 - Install the RPi Linux environment on the host :
@@ -50,7 +54,7 @@ So the Raspberry Pi linux (branch rpi-6.1.y) has to be built on a host computer 
 ./compile_linux_host.sh
 </pre>
 
-- Install the MIPI drivers in the **sources** folder :
+- Install the Linux build in the **sources** folder :
 <pre>
 ./install_sources_host.sh
 </pre>
@@ -62,7 +66,7 @@ So the Raspberry Pi linux (branch rpi-6.1.y) has to be built on a host computer 
 </pre>
 - Customize /boot/config.txt :
 <pre>
-dtoverlay=dal_mipi
+dtoverlay=eg-ec-mipi
 #dtparam=2lanes # Uncomment it for 2 MIPI lanes. 1 lane by default.
 dtparam=i2c-addr=0x16
 </pre>
@@ -74,8 +78,8 @@ dtparam=i2c-addr=0x16
 - Find the right branch and commit at https://github.com/raspberrypi/linux.git
 - Modify **install_env_host.sh** :
 <pre>
-git clone -b <b>$your_branch</b> https://github.com/raspberrypi/linux.git ${LINUX_RPI_BUILD}
-pushd ${LINUX_RPI_BUILD}
+git clone -b <b>$your_branch</b> https://github.com/raspberrypi/linux.git ${LINUX_RPI_SRC}
+pushd ${LINUX_RPI_SRC}
 git reset --hard <b>$your_commit</b>
 popd
 </pre>

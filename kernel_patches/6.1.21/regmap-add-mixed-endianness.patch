@@ -1,0 +1,115 @@
+--- a/drivers/base/regmap/regmap.c	2024-01-04 16:31:05.396520449 +0100
++++ b/drivers/base/regmap/regmap.c	2024-01-04 16:33:15.000000000 +0100
+@@ -303,6 +303,30 @@
+ 	put_unaligned_le32(val << shift, buf);
+ }
+ 
++static void regmap_format_32_lbe(void *buf, unsigned int val, unsigned int shift)
++{
++	u8 *b = buf;
++
++	val <<= shift;
++
++	b[0] = val >> 16;
++	b[1] = val >> 24;
++	b[2] = val;
++	b[3] = val >> 8;
++}
++
++static void regmap_format_32_ble(void *buf, unsigned int val, unsigned int shift)
++{
++	u8 *b = buf;
++
++	val <<= shift;
++
++	b[0] = val >> 8;
++	b[1] = val;
++	b[2] = val >> 24;
++	b[3] = val >> 16;
++}
++
+ static void regmap_format_32_native(void *buf, unsigned int val,
+ 				    unsigned int shift)
+ {
+@@ -389,6 +413,29 @@
+ 	return get_unaligned_le32(buf);
+ }
+ 
++static unsigned int regmap_parse_32_lbe(const void *buf)
++{
++	const u8 *b = buf;
++	unsigned int ret = b[2];
++	ret |= ((unsigned int)b[3]) << 8;
++	ret |= ((unsigned int)b[0]) << 16;
++	ret |= ((unsigned int)b[1]) << 24;
++
++	return ret;
++}
++
++static unsigned int regmap_parse_32_ble(const void *buf)
++{
++	const u8 *b = buf;
++	unsigned int ret = b[1];
++	ret |= ((unsigned int)b[0]) << 8;
++	ret |= ((unsigned int)b[3]) << 16;
++	ret |= ((unsigned int)b[2]) << 24;
++
++	return ret;
++}
++
++
+ static void regmap_parse_32_be_inplace(void *buf)
+ {
+ 	u32 v = get_unaligned_be32(buf);
+@@ -403,6 +450,21 @@
+ 	memcpy(buf, &v, sizeof(v));
+ }
+ 
++static void regmap_parse_32_lbe_inplace(void *buf)
++{
++	u32 *b = buf;
++
++	b[0] = regmap_parse_32_lbe(buf);
++}
++
++static void regmap_parse_32_ble_inplace(void *buf)
++{
++	u32 *b = buf;
++
++	b[0] = regmap_parse_32_ble(buf);
++}
++
++
+ static unsigned int regmap_parse_32_native(const void *buf)
+ {
+ 	u32 v;
+@@ -1078,6 +1140,16 @@
+ 			map->format.parse_val = regmap_parse_32_le;
+ 			map->format.parse_inplace = regmap_parse_32_le_inplace;
+ 			break;
++		case REGMAP_ENDIAN_LITTLE_BIG:
++			map->format.format_val = regmap_format_32_lbe;
++			map->format.parse_val = regmap_parse_32_lbe;
++			map->format.parse_inplace = regmap_parse_32_lbe_inplace;
++			break;
++		case REGMAP_ENDIAN_BIG_LITTLE:
++			map->format.format_val = regmap_format_32_ble;
++			map->format.parse_val = regmap_parse_32_ble;
++			map->format.parse_inplace = regmap_parse_32_ble_inplace;
++			break;
+ 		case REGMAP_ENDIAN_NATIVE:
+ 			map->format.format_val = regmap_format_32_native;
+ 			map->format.parse_val = regmap_parse_32_native;
+--- a/include/linux/regmap.h	2024-01-04 16:39:16.483201488 +0100
++++ b/include/linux/regmap.h	2024-01-04 16:39:32.000000000 +0100
+@@ -188,6 +188,10 @@
+ 	REGMAP_ENDIAN_BIG,
+ 	REGMAP_ENDIAN_LITTLE,
+ 	REGMAP_ENDIAN_NATIVE,
++	/* Mixed endian: be words in le order (like on PDP-11), 2-1-4-3 */
++	REGMAP_ENDIAN_BIG_LITTLE,
++	/* Mixed endian: le words in be order, 3-4-1-2 */
++	REGMAP_ENDIAN_LITTLE_BIG,
+ };
+ 
+ /**

@@ -28,23 +28,5 @@ then
       rm -rf lib
       rm -f *.ko.xz
    fi
-else
-   # Do it on host
-   if [[ $1 == "make" ]]
-   then
-      patch -p1 < y16.patch
-      ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make -C $2 M=$PWD
-   elif [[ $1 == "install" ]]
-   then
-      ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make -C $2 M=$PWD INSTALL_MOD_DIR=${LIB_FOLDER} modules_install INSTALL_MOD_PATH=$PWD modules_install
-      if [[ x$3 != x ]]
-      then
-         ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make -C $2 M=$PWD INSTALL_MOD_DIR=${LIB_FOLDER} modules_install INSTALL_MOD_PATH=$3 modules_install
-      fi
-   elif [[ $1 == "clean" ]]
-   then
-      ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make -C $2 M=$PWD clean
-      rm -rf lib
-   fi
 fi
 

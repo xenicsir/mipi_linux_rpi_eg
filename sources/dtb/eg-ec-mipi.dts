@@ -17,7 +17,6 @@
 		target = <&cam1_clk>;
 		__overlay__ {
 			status = "okay";
-//			clock-frequency = <24000000>;
 			clock-frequency = <100000000>;
 		};
 	};
@@ -36,8 +35,8 @@
 			#size-cells = <0>;
 			status = "okay";
 
-			dal_mipi: dal_mipi@16 {
-				compatible = "dal,dal_mipi";
+			eg_ec_mipi: eg_ec_mipi@16 {
+				compatible = "xenics,eg-ec-mipi";
 				reg = <0x16>;
 				status = "okay";
 
@@ -52,7 +51,7 @@
 				orientation = <2>;
 
 				port {
-					dal_mipi_0: endpoint {
+					eg_ec_mipi_0: endpoint {
 						remote-endpoint = <&csi_ep>;
 						clock-lanes = <0>;
 						clock-noncontinuous;
@@ -77,7 +76,7 @@
 
 			port {
 				csi_ep: endpoint {
-					remote-endpoint = <&dal_mipi_0>;
+					remote-endpoint = <&eg_ec_mipi_0>;
 					clock-lanes = <0>;
 					clock-noncontinuous;
 				};
@@ -100,14 +99,14 @@
 	};
 
 	fragment@7 {
-		target = <&dal_mipi_0>;
+		target = <&eg_ec_mipi_0>;
 		__overlay__ {
 			data-lanes = <1>;
 		};
 	};
 
 	fragment@8 {
-		target = <&dal_mipi_0>;
+		target = <&eg_ec_mipi_0>;
 		__dormant__ {
 			data-lanes = <1 2>;
 		};
@@ -115,6 +114,6 @@
 
 	__overrides__ {
 		2lanes = <0>, "-5+6-7+8";
-      i2c-addr = <&dal_mipi>,"reg:0";
+      i2c-addr = <&eg_ec_mipi>,"reg:0";
 	};
 };
