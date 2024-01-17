@@ -3,6 +3,7 @@
 . ./environment
 
 # Install kernel Image
+mkdir -p $LINUX_RPI_INSTALL_KERNEL
 cp ${LINUX_RPI_SRC}/arch/arm64/boot/Image $LINUX_RPI_INSTALL_KERNEL/
 gzip $LINUX_RPI_INSTALL_KERNEL/Image
 mv $LINUX_RPI_INSTALL_KERNEL/Image.gz $LINUX_RPI_INSTALL_KERNEL/kernel8.img

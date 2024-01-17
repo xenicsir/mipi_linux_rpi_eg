@@ -8,7 +8,7 @@ then
    MODULES_FOLDER=lib/modules/$(uname -r)
    if [[ $1 == "make" ]]
    then
-      patch -p1 < y16.patch
+      patch -N -p1 < y16.patch
       make -C /${MODULES_FOLDER}/build M=$PWD
       rm -f *.ko.xz
       rm -f lib

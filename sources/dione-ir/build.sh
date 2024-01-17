@@ -5,26 +5,30 @@ LIB_FOLDER=kernel/drivers/media/i2c
 if [ $(grep -c Raspberry /proc/cpuinfo) -eq 1 ]
 then
    # Do it on target
-   MODULES_FOLDER=lib/modules/$(uname -r)
-   if [[ $1 == "make" ]]
+   VERSION_CODENAME=$(grep VERSION_CODENAME /etc/os-release | awk -F= '{print $2}')
+   if [[ $VERSION_CODENAME == "bullseye" ]]
    then
-      make -C /${MODULES_FOLDER}/build M=$PWD
-      rm -f *.ko.xz
-      rm -f lib
-   elif [[ $1 == "install" ]]
-   then
-      MODNAME=${MODULES_FOLDER}/${LIB_FOLDER}/dione_ir.ko.xz
-      if [ ! -d lib ] # if the lib folder exists, do nothing, the module is to be installed from ../lib
+      MODULES_FOLDER=lib/modules/$(uname -r)
+      if [[ $1 == "make" ]]
       then
-         sudo make -C /${MODULES_FOLDER}/build M=$PWD INSTALL_MOD_DIR=${LIB_FOLDER} modules_install
-         sudo depmod
+         make -C /${MODULES_FOLDER}/build M=$PWD
+         rm -f *.ko.xz
+         rm -f lib
+      elif [[ $1 == "install" ]]
+      then
+         if [ ! -d lib ] # if the lib folder exists, do nothing, the module is to be installed from ../lib
+         then
+            sudo make -C /${MODULES_FOLDER}/build M=$PWD INSTALL_MOD_DIR=${LIB_FOLDER} modules_install
+            sudo depmod
+         fi
+      elif [[ $1 == "clean" ]]
+      then
+         make -C /${MODULES_FOLDER}/build M=$PWD clean
+         rm -rf lib
+         rm -f *.ko.xz
       fi
-      sudo depmod
-   elif [[ $1 == "clean" ]]
-   then
-      make -C /${MODULES_FOLDER}/build M=$PWD clean
-      rm -rf lib
-      rm -f *.ko.xz
+   else
+      echo Building is not supported on $VERSION_CODENAME
    fi
 else
    # Do it on host

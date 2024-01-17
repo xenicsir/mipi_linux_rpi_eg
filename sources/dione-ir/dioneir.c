@@ -27,8 +27,6 @@
 #include "tc358746_regs.h"
 #include "tc358746_calculation.h"
 
-#define CHNOD_NAME   "eg-dione"
-
 #define MAX_I2C_CLIENTS_NUMBER 128
 
 #define DIONE_IR_REG_WIDTH_MAX		0x0002f028
@@ -925,7 +923,7 @@ static int detect_dione_ir(struct dione_ir *priv, u32 fpga_addr)
          if (i2c_clients[i].i2c_client == NULL)
          {
             i2c_clients[i].i2c_client = priv->fpga_client;
-            sprintf(i2c_clients[i].chnod_name,  "%s-%02x", CHNOD_NAME, fpga_addr);
+            sprintf(i2c_clients[i].chnod_name,  "%s-i2c-%02x", dev_driver_string(dev), fpga_addr);
             dev_info(dev, "chnod: /dev/%s\n", i2c_clients[i].chnod_name);
             err = dione_ir_chnod_register_device(i);
             if (err)
@@ -1515,6 +1513,8 @@ static int dione_ir_probe(struct i2c_client *client, const struct i2c_device_id 
       dev_err(dev, "failed to register dione_ir sub-device: %d\n", ret);
       goto error_media_entity;
    }
+
+   dev_info(dev, "registered\n");
 
    return 0;
 

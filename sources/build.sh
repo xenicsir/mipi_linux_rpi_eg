@@ -43,8 +43,19 @@ then
    then
       if [ $(grep -c Raspberry /proc/cpuinfo) -eq 1 ]
       then
-         sudo cp /boot/kernel8.img /boot/kernel8.img.bak
-         sudo rsync -iahHAXxvz --progress --chown=root:root linux_install/kernel/kernel8.img /boot/
+         KERNEL_PATH=/boot/
+         if [[ -f /boot/kernel8.img ]] # Before Bookworm
+         then
+            KERNEL_PATH=/boot
+         fi
+         if [[ -f /boot/firmware/kernel8.img ]] # Bookworm
+         then
+            KERNEL_PATH=/boot/firmware
+         fi
+         
+         sudo cp $KERNEL_PATH/kernel8.img $KERNEL_PATH/kernel8.img.bak
+         sudo rsync -iahHAXxvz --progress --chown=root:root linux_install/kernel/kernel8.img $KERNEL_PATH/
+
          sudo rsync -iahHAXxvz --progress --chown=root:root linux_install/lib/modules/* /lib/modules/
          sudo depmod
       fi
@@ -60,7 +71,7 @@ then
       then
          echo "# Uncomment the following line to enable EngineCore camera" | sudo tee -a /boot/config.txt
          echo "#dtoverlay=eg-ec-mipi" | sudo tee -a /boot/config.txt
-         echo "# Uncomment the following line for EngineCore 2 MIPI lanes. 1 lane by default." | sudo tee -a /boot/config.txt
+         echo "# Uncomment the following line for EngineCore with 2 MIPI lanes. 1 lane by default." | sudo tee -a /boot/config.txt
          echo "#dtparam=2lanes" | sudo tee -a /boot/config.txt
          echo "# Uncomment the following line to modify the EngineCore I2C address. 0x16 by default." | sudo tee -a /boot/config.txt
          echo "#dtparam=i2c-addr=0x16" | sudo tee -a /boot/config.txt
@@ -71,4 +82,9 @@ then
          echo "#dtoverlay=dione-ir" | sudo tee -a /boot/config.txt
       fi
    fi
+fi
+
+if [[ $1 == "clean" ]]
+then
+   rm -rf linux_install
 fi

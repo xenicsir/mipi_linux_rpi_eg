@@ -13,7 +13,6 @@ then
       rm -f lib
    elif [[ $1 == "install" ]]
    then
-      MODNAME=${MODULES_FOLDER}/${LIB_FOLDER}/eg_eg_mipi.ko.xz
       if [ ! -d lib ] # if the lib folder exists, do nothing, the module is to be installed from ../lib
       then
          sudo make -C /${MODULES_FOLDER}/build M=$PWD INSTALL_MOD_DIR=${LIB_FOLDER} modules_install

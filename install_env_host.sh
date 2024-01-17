@@ -11,7 +11,4 @@ then
    popd
 fi
 
-mkdir -p $LINUX_RPI_INSTALL_KERNEL
-mkdir -p $LINUX_RPI_INSTALL_MODULES
-
 

@@ -805,6 +805,7 @@ static int eg_ec_probe(struct i2c_client *client, const struct i2c_device_id *id
          i2c_clients[i].i2c_client = client;
          i2c_clients[i].root_adap = i2c_root_adapter(dev);
          sprintf(i2c_clients[i].chnod_name,  "%s-%s", dev_driver_string(dev), dev_name(dev));
+         dev_info(dev, "chnod: /dev/%s\n", i2c_clients[i].chnod_name);
          err = eg_ec_chnod_register_device(i);
          if (err)
          {
@@ -886,7 +887,7 @@ static int eg_ec_probe(struct i2c_client *client, const struct i2c_device_id *id
       goto error_media_entity;
    }
 
-   dev_info(dev, "%s registered\n", i2c_clients[i].chnod_name);
+   dev_info(dev, "registered\n");
 
    return 0;
 
@@ -914,7 +915,6 @@ static void eg_ec_remove(struct i2c_client *client)
    struct v4l2_subdev *sd = i2c_get_clientdata(client);
    struct device *dev = &client->dev;
    struct eg_ec *eg_ec = to_eg_ec(sd);
-   char tmp[128];
    int i;
 
    v4l2_async_unregister_subdev(&eg_ec->sd);
@@ -931,7 +931,6 @@ static void eg_ec_remove(struct i2c_client *client)
             class_destroy(i2c_clients[i].pClass_chnod);
             unregister_chrdev(i2c_clients[i].chnod_major_number, i2c_clients[i].chnod_name);
          }
-         sprintf(tmp,  "%s-%s", dev_driver_string(dev), dev_name(dev));
          dev_info(dev, "Removed %s device\n", i2c_clients[i].chnod_name);
          i2c_clients[i].i2c_client = NULL;
          i2c_clients[i].chnod_name[0] = 0;
@@ -955,7 +954,7 @@ static struct i2c_driver eg_ec_driver = {
    .probe = eg_ec_probe,
    .remove = eg_ec_remove,
    .driver = {
-      .name = "eg-ec-mipi",
+      .name = "eg-ec-i2c",
       .of_match_table	= eg_ec_dt_ids,
    },
 };

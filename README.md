@@ -1,19 +1,19 @@
 This document present how to build and install the MIPI drivers of Exosens cameras for Raspberry Pi.
 
-## Building framework
+## Building environment
 
-### 0. Environment used with this building framework
+### 0. Environment used with this building environment
 
 - Rpi model : Raspberry Pi 4 Model B
-- Host computer OS Ubuntu 20.04.1 LTS
+- Host computer Ubuntu 20.04.1 LTS
 - Cross compiler gcc-9-aarch64-linux-gnu
 
-Note about cross compiler versions :
-- BookWorm 12 was compiled with gcc-12 (12.2.0-14)
-- BullsEye 11 was compiled with gcc-8 (8.4.0)
+Note about vanilla Rpi OS cross compiler versions :
+- Bookworm 12 was compiled with gcc-12 (12.2.0-14)
+- Bullseye 11 was compiled with gcc-8 (8.4.0)
 
-### 1. Building MIPI driver for RPi OS BookWorm
-For this RPi OS version, the Linux kernel is not built from the Raspberry Pi Linux, but is a Debian package.
+### 1. Building MIPI driver for RPi OS Bookworm
+For this RPi OS version, the Linux kernel is not built from the Raspberry Pi Linux repository, but is a Debian package.
 <pre>
 cat /etc/os-release
 PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
@@ -23,25 +23,32 @@ Linux pi <b>6.1.0-rpi7-rpi-v8</b> #1 SMP PREEMPT Debian 1:<b>6.1.63-1+rpt1</b> (
 </pre>
 
 The 6.1.0-rpi7-rpi-v8 Linux version, which is based on kernel 6.1.63, is not available for download and cross compilation on a host. So the MIPI driver hast to be built out of tree on the Raspberry Pi.
-The corresponding kernel headers are installed by default with BookWorm.
+The corresponding kernel headers are installed by default with Bookworm.
 
-- Copy the **sources** folder to the RPi and build/install it :
+- Be carefull that the **sources** folder is clean of object files (*.o, *.ko) and **linux_install** folder
+- Copy the **sources** folder to the Raspberry Pi
+- Log to the Raspberry Pi, go to the **sources** folder and build/install the drivers :
 <pre>
 ./build.sh make
 ./build.sh install
 </pre>
 - Customize /boot/config.txt :
 <pre>
-dtoverlay=eg-ec-mipi
-#dtparam=2lanes # Uncomment it for 2 MIPI lanes. 1 lane by default.
-dtparam=i2c-addr=0x16
+# Uncomment the following line to enable EngineCore camera
+#dtoverlay=eg-ec-mipi
+# Uncomment the following line for EngineCore 2 MIPI lanes. 1 lane by default.
+#dtparam=2lanes
+# Uncomment the following line to modify the EngineCore I2C address. 0x16 by default.
+#dtparam=i2c-addr=0x16
+# Uncomment the following line to enable Dione camera
+#dtoverlay=dione-ir
 </pre>
 
 - Reboot the RPi
 
-### 2. Building MIPI driver for RPi OS BullsEye
+### 2. Building MIPI driver for RPi OS Bullseye
 
-For RPI OS BullsEye, the driver must be built on a host computer, as the last kernel headers for BullsEye (6.1.21) are not available in the packages repository.
+For RPI OS Bullseye, the driver must be built on a host computer, as the last kernel headers for Bullseye (6.1.21) are not available in the packages repository.
 So the Raspberry Pi linux (branch rpi-6.1.y) has to be built on a host computer with a cross compiler.
 
 - Install the RPi Linux environment on the host :
@@ -66,12 +73,22 @@ So the Raspberry Pi linux (branch rpi-6.1.y) has to be built on a host computer 
 </pre>
 - Customize /boot/config.txt :
 <pre>
-dtoverlay=eg-ec-mipi
-#dtparam=2lanes # Uncomment it for 2 MIPI lanes. 1 lane by default.
-dtparam=i2c-addr=0x16
+# Uncomment the following line to enable EngineCore camera
+#dtoverlay=eg-ec-mipi
+# Uncomment the following line for EngineCore with 2 MIPI lanes. 1 lane by default.
+#dtparam=2lanes
+# Uncomment the following line to modify the EngineCore I2C address. 0x16 by default.
+#dtparam=i2c-addr=0x16
+# Uncomment the following line to enable Dione camera
+#dtoverlay=dione-ir
 </pre>
 
 - Reboot the RPi
+
+Note : on the host, it is possible to clean the **sources** folder with this command
+<pre>
+./clean_sources.sh
+</pre>
 
 ### 3. Building MIPI driver on host for RPI OS with other RPi Linux versions
 
@@ -87,38 +104,37 @@ popd
 
 **Note : code in "sources" folder may not compile because of incompatible Linux version**
 
-## To grab video
+## To grab video on target
 
 Install gstreamer if needed:
 <pre>
 sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-tools gstreamer1.0-x gstreamer1.0-alsa gstreamer1.0-gl gstreamer1.0-gtk3 gstreamer1.0-qt5 gstreamer1.0-pulseaudio
 </pre>
-- YCbCr
+
+### EngineCore cameras
+- YCbCr 4:2:2
 <pre>
-#v4l2-ctl -d /dev/video0 --stream-mmap --set-fmt-video=width=640,height=480,pixelformat="UYVY"
 gst-launch-1.0 -v v4l2src device=/dev/video0 ! "video/x-raw, format=(string)UYVY, width=640, height=480" ! videoconvert ! autovideosink
 gst-launch-1.0 -v v4l2src device=/dev/video0 ! "video/x-raw, format=(string)UYVY, width=1280, height=1024" ! videoconvert ! autovideosink
 </pre>
 
-- RGB
+- RGB888
 <pre>
-#v4l2-ctl -d /dev/video0 --stream-mmap --set-fmt-video=width=640,height=480,pixelformat="RGB3"
 gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)RGB, width=640, height=480" ! videoconvert ! autovideosink
 gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)RGB, width=1280, height=1024" ! videoconvert ! autovideosink
 </pre>
 
 - Y16
 <pre>
-#v4l2-ctl -d /dev/video0 --stream-mmap --set-fmt-video=width=640,height=480,pixelformat="Y16 "
 gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)GRAY16_BE, width=640, height=480" ! videoconvert ! autovideosink
 gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)GRAY16_BE, width=1280, height=1024" ! videoconvert ! autovideosink
 </pre>
 
+### Dione cameras
 
-## To use the camera :
-libecctrl
-
-ECSwCtrl
-
-ECSwUpgrade
+- RGB888
+<pre>
+gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=640,height=480 ! videoconvert ! ximagesink sync=false
+gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=1280,height=1024 ! videoconvert ! ximagesink sync=false
+</pre>
 
