@@ -153,7 +153,7 @@ static const struct regmap_config tx_regmap_config = {
 	.cache_type = REGCACHE_NONE,
 	.max_register = 0x05ff,
 	.reg_format_endian = REGMAP_ENDIAN_BIG,
-	.val_format_endian = REGMAP_ENDIAN_BIG_LITTLE,
+	.val_format_endian = REGMAP_ENDIAN_NATIVE,
 	.rd_table = &tx_regmap_access,
 	.wr_table = &tx_regmap_access,
 	.name = "tc358746-tx",
@@ -189,6 +189,19 @@ static const struct dione_ir_mode dione_ir_supported_modes[] = {
                .pix_clk_hz = 20000000,
         },
 };
+
+static void dione_ir_regmap_format_32_ble(void *buf, unsigned int val)
+{
+   u8 *b = buf;
+   int val_after;
+
+   b[0] = val >> 8;
+   b[1] = val;
+   b[2] = val >> 24;
+   b[3] = val >> 16;
+   val_after = *(int*)buf;
+}
+
 
 
 static int dione_ir_find_frmfmt(u32 width, u32 height)
@@ -481,33 +494,44 @@ static int tc358746_enable_csi_lanes(struct regmap *regmap,
 				     int lane_num, int enable)
 {
 	u32 val = 0;
+	u32 bleVal = 0;
 	int err = 0;
 
 	if (lane_num < 1 || !enable) {
 		if (!err)
-			err = regmap_write(regmap, CLW_CNTRL,
-					   CLW_CNTRL_CLW_LANEDISABLE_MASK);
+      {
+         dione_ir_regmap_format_32_ble((void *)&bleVal, CLW_CNTRL_CLW_LANEDISABLE_MASK);
+			err = regmap_write(regmap, CLW_CNTRL, bleVal);
+      }
 		if (!err)
-			err = regmap_write(regmap, D0W_CNTRL,
-					   D0W_CNTRL_D0W_LANEDISABLE_MASK);
+      {
+         dione_ir_regmap_format_32_ble((void *)&bleVal, D0W_CNTRL_D0W_LANEDISABLE_MASK);
+			err = regmap_write(regmap, D0W_CNTRL, bleVal);
+      }
 	}
 
 	if (lane_num < 2 || !enable) {
 		if (!err)
-			err = regmap_write(regmap, D1W_CNTRL,
-					   D1W_CNTRL_D1W_LANEDISABLE_MASK);
+      {
+         dione_ir_regmap_format_32_ble((void *)&bleVal, D1W_CNTRL_D1W_LANEDISABLE_MASK);
+			err = regmap_write(regmap, D1W_CNTRL, bleVal);
+      }
 	}
 
 	if (lane_num < 3 || !enable) {
 		if (!err)
-			err = regmap_write(regmap, D2W_CNTRL,
-					   D2W_CNTRL_D2W_LANEDISABLE_MASK);
+      {
+         dione_ir_regmap_format_32_ble((void *)&bleVal, D2W_CNTRL_D2W_LANEDISABLE_MASK);
+			err = regmap_write(regmap, D2W_CNTRL, bleVal);
+      }
 	}
 
 	if (lane_num < 4 || !enable) {
 		if (!err)
-			err = regmap_write(regmap, D3W_CNTRL,
-					   D2W_CNTRL_D3W_LANEDISABLE_MASK);
+      {
+         dione_ir_regmap_format_32_ble((void *)&bleVal, D2W_CNTRL_D3W_LANEDISABLE_MASK);
+			err = regmap_write(regmap, D3W_CNTRL, bleVal);
+      }
 	}
 
 	if (lane_num > 0 && enable) {
@@ -525,7 +549,10 @@ static int tc358746_enable_csi_lanes(struct regmap *regmap,
 		val |= HSTXVREGEN_D3M_HSTXVREGEN_MASK;
 
 	if (!err)
-		err = regmap_write(regmap, HSTXVREGEN, val);
+   {
+      dione_ir_regmap_format_32_ble((void *)&bleVal, val);
+		err = regmap_write(regmap, HSTXVREGEN, bleVal);
+   }
 
 	return err;
 }
@@ -533,63 +560,97 @@ static int tc358746_enable_csi_lanes(struct regmap *regmap,
 static int tc358746_set_csi(struct regmap *regmap,
 			    const struct tc358746_csi *csi)
 {
-	u32 val;
+	u32 val, bleVal;
 	int err;
 
 	val = TCLK_HEADERCNT_TCLK_ZEROCNT_SET(csi->tclk_zerocnt) |
 	      TCLK_HEADERCNT_TCLK_PREPARECNT_SET(csi->tclk_preparecnt);
-	err = regmap_write(regmap, TCLK_HEADERCNT, val);
+   dione_ir_regmap_format_32_ble((void *)&bleVal, val);
+	err = regmap_write(regmap, TCLK_HEADERCNT, bleVal);
 
 	val = THS_HEADERCNT_THS_ZEROCNT_SET(csi->ths_zerocnt) |
 	      THS_HEADERCNT_THS_PREPARECNT_SET(csi->ths_preparecnt);
 	if (!err)
-		err = regmap_write(regmap, THS_HEADERCNT, val);
+   {
+      dione_ir_regmap_format_32_ble((void *)&bleVal, val);
+		err = regmap_write(regmap, THS_HEADERCNT, bleVal);
+   }
 
 	if (!err)
-		err = regmap_write(regmap, TWAKEUP, csi->twakeupcnt);
+   {
+      dione_ir_regmap_format_32_ble((void *)&bleVal, csi->twakeupcnt);
+		err = regmap_write(regmap, TWAKEUP, bleVal);
+   }
 
 	if (!err)
-		err = regmap_write(regmap, TCLK_POSTCNT, csi->tclk_postcnt);
+   {
+      dione_ir_regmap_format_32_ble((void *)&bleVal, csi->tclk_postcnt);
+		err = regmap_write(regmap, TCLK_POSTCNT, bleVal);
+   }
 
 	if (!err)
-		err = regmap_write(regmap, THS_TRAILCNT, csi->ths_trailcnt);
+   {
+      dione_ir_regmap_format_32_ble((void *)&bleVal, csi->ths_trailcnt);
+		err = regmap_write(regmap, THS_TRAILCNT, bleVal);
+   }
 
 	if (!err)
-		err = regmap_write(regmap, LINEINITCNT, csi->lineinitcnt);
+   {
+      dione_ir_regmap_format_32_ble((void *)&bleVal, csi->lineinitcnt);
+		err = regmap_write(regmap, LINEINITCNT, bleVal);
+   }
 
 	if (!err)
-		err = regmap_write(regmap, LPTXTIMECNT, csi->lptxtimecnt);
+   {
+      dione_ir_regmap_format_32_ble((void *)&bleVal, csi->lptxtimecnt);
+		err = regmap_write(regmap, LPTXTIMECNT, bleVal);
+   }
 
 	if (!err)
-		err = regmap_write(regmap, TCLK_TRAILCNT, csi->tclk_trailcnt);
+   {
+      dione_ir_regmap_format_32_ble((void *)&bleVal, csi->tclk_trailcnt);
+		err = regmap_write(regmap, TCLK_TRAILCNT, bleVal);
+   }
 
 	if (!err)
-		err = regmap_write(regmap, HSTXVREGCNT, CSI_HSTXVREGCNT);
+   {
+      dione_ir_regmap_format_32_ble((void *)&bleVal, CSI_HSTXVREGCNT);
+		err = regmap_write(regmap, HSTXVREGCNT, bleVal);
+   }
 
 	val = csi->is_continuous_clk ? TXOPTIONCNTRL_CONTCLKMODE_MASK : 0;
 	if (!err)
-		err = regmap_write(regmap, TXOPTIONCNTRL, val);
+   {
+      dione_ir_regmap_format_32_ble((void *)&bleVal, val);
+		err = regmap_write(regmap, TXOPTIONCNTRL, bleVal);
+   }
 
 	return err;
 }
 
 static int tc358746_wr_csi_control(struct regmap *regmap, u32 val)
 {
+	u32 bleVal;
 	val &= CSI_CONFW_DATA_MASK;
 	val |= CSI_CONFW_MODE_SET_MASK | CSI_CONFW_ADDRESS_CSI_CONTROL_MASK;
+   dione_ir_regmap_format_32_ble((void *)&bleVal, val);
 
-	return regmap_write(regmap, CSI_CONFW, val);
+	return regmap_write(regmap, CSI_CONFW, bleVal);
 }
 
 static int tc358746_enable_csi_module(struct regmap *regmap, int lane_num)
 {
-	u32 val;
+	u32 val, bleVal;
 	int err;
 
-	err = regmap_write(regmap, STARTCNTRL, STARTCNTRL_START_MASK);
+   dione_ir_regmap_format_32_ble((void *)&bleVal, STARTCNTRL_START_MASK);
+	err = regmap_write(regmap, STARTCNTRL, bleVal);
 
 	if (!err)
-		err = regmap_write(regmap, CSI_START, CSI_START_STRT_MASK);
+   {
+      dione_ir_regmap_format_32_ble((void *)&bleVal, CSI_START_STRT_MASK);
+		err = regmap_write(regmap, CSI_START, bleVal);
+   }
 
 	val = CSI_CONTROL_NOL_1_MASK;
 	if (lane_num == 2)
@@ -603,7 +664,9 @@ static int tc358746_enable_csi_module(struct regmap *regmap, int lane_num)
 		CSI_CONTROL_EOTDIS_MASK; /* add, according to Excel */
 
 	if (!err)
+   {
 		err = tc358746_wr_csi_control(regmap, val);
+   }
 
 	return err;
 }
@@ -857,7 +920,11 @@ static inline int dione_ir_chnod_register_device(int i2c_ind)
 
    i2c_clients[i2c_ind].chnod_device_number = MKDEV(i2c_clients[i2c_ind].chnod_major_number, 0);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,4,0)
    i2c_clients[i2c_ind].pClass_chnod = class_create(THIS_MODULE, i2c_clients[i2c_ind].chnod_name);
+#else
+   i2c_clients[i2c_ind].pClass_chnod = class_create(i2c_clients[i2c_ind].chnod_name);
+#endif
    if (IS_ERR(i2c_clients[i2c_ind].pClass_chnod)) {
       printk(KERN_WARNING "\ncan't create class");
       unregister_chrdev_region(i2c_clients[i2c_ind].chnod_device_number, 1);
@@ -936,7 +1003,6 @@ static int detect_dione_ir(struct dione_ir *priv, u32 fpga_addr)
          }
       }
    }
-
 	dev_info(dev, "dione-ir %ux%u at address %#02x, firmware: %s\n",
 		 width, height, fpga_addr, buf);
 
@@ -1189,6 +1255,7 @@ static int dione_ir_set_stream(struct v4l2_subdev *sd, int enable)
    struct dione_ir *priv = to_dione_ir(sd);
 	struct device *dev = &priv->tc35_client->dev;
    int err;
+   u32 bleVal;
 
    if (enable)
    {
@@ -1222,11 +1289,14 @@ static int dione_ir_set_stream(struct v4l2_subdev *sd, int enable)
                    PP_MISC_RSTPTR_MASK);
 
       if (!err)
-         err = regmap_write(tx_regmap, CSIRESET,
-                  (CSIRESET_RESET_CNF_MASK |
-                   CSIRESET_RESET_MODULE_MASK));
+      {
+         dione_ir_regmap_format_32_ble((void *)&bleVal, CSIRESET_RESET_CNF_MASK | CSIRESET_RESET_MODULE_MASK);
+         err = regmap_write(tx_regmap, CSIRESET, bleVal);
+      }
       if (!err)
+      {
          err = regmap_write(ctl_regmap, DBG_ACT_LINE_CNT, 0);
+      }
 
       if (err)
          dev_err(dev, "%s return code (%d)\n", __func__, err);
@@ -1417,7 +1487,7 @@ static int dione_ir_parse_fpga_address(struct i2c_client *client,
 					  priv->fpga_address_num);
 }
 
-static int dione_ir_probe(struct i2c_client *client, const struct i2c_device_id *id)
+static int dione_ir_probe(struct i2c_client *client)
 {
    struct device *dev = &client->dev;
    struct dione_ir *dione_ir;
@@ -1577,7 +1647,7 @@ static const struct of_device_id dione_ir_id[] = {
 MODULE_DEVICE_TABLE(of, dione_ir_id);
 
 static struct i2c_driver dione_ir_i2c_driver = {
-   .probe = dione_ir_probe,
+   .probe_new = dione_ir_probe,
    .remove = dione_ir_remove,
    .driver = {
       .name = "dioneir",

@@ -15,7 +15,18 @@ done
 popd
 
 # Compile Linux kernel
-ARCH=$KERN_ARCH CROSS_COMPILE=$KERN_CROSS_COMPILE KERNEL=$KERN_KERNEL LOCALVERSION=$KERN_LOCALVERSION make -C $LINUX_RPI_SRC bcm2711_defconfig
+if [[ $1 == rpi4 ]]
+then
+   DEFCONFIG=bcm2711_defconfig
+elif [[ $1 == rpi5 ]]
+then
+   DEFCONFIG=bcm2712_defconfig
+else
+   echo "Error, specify a target board : rpi4 or rpi5"
+   exit
+fi
+
+ARCH=$KERN_ARCH CROSS_COMPILE=$KERN_CROSS_COMPILE KERNEL=$KERN_KERNEL LOCALVERSION=$KERN_LOCALVERSION make -C $LINUX_RPI_SRC $DEFCONFIG
 ARCH=$KERN_ARCH CROSS_COMPILE=$KERN_CROSS_COMPILE KERNEL=$KERN_KERNEL LOCALVERSION=$KERN_LOCALVERSION make -C $LINUX_RPI_SRC Image modules dtbs
 
 pushd sources

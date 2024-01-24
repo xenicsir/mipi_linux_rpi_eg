@@ -1,0 +1,16 @@
+--- a/bcm2835-unicam.c
++++ b/bcm2835-unicam.c
+@@ -463,6 +463,13 @@ static const struct unicam_fmt formats[] = {
+ 		.depth		= 16,
+ 		.csi_dt		= MIPI_CSI2_DT_RAW16,
+ 		.valid_colorspaces = MASK_CS_RAW,
++	}, {
++		.fourcc		= V4L2_PIX_FMT_Y16_BE,
++		.repacked_fourcc = V4L2_PIX_FMT_Y16_BE,
++		.code		= MEDIA_BUS_FMT_Y16_1X16,
++		.depth		= 16,
++		.csi_dt		= MIPI_CSI2_DT_RAW16,
++		.valid_colorspaces = MASK_CS_RAW,
+ 	},
+ 	/* Embedded data format */
+ 	{

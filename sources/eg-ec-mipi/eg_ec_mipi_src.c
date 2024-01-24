@@ -284,7 +284,11 @@ static inline int eg_ec_chnod_register_device(int i2c_ind)
 
    i2c_clients[i2c_ind].chnod_device_number = MKDEV(i2c_clients[i2c_ind].chnod_major_number, 0);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,4,0)
    i2c_clients[i2c_ind].pClass_chnod = class_create(THIS_MODULE, i2c_clients[i2c_ind].chnod_name);
+#else
+   i2c_clients[i2c_ind].pClass_chnod = class_create(i2c_clients[i2c_ind].chnod_name);
+#endif
    if (IS_ERR(i2c_clients[i2c_ind].pClass_chnod)) {
       printk(KERN_WARNING "\ncan't create class");
       unregister_chrdev_region(i2c_clients[i2c_ind].chnod_device_number, 1);
@@ -788,7 +792,7 @@ error_out:
    return ret;
 }
 
-static int eg_ec_probe(struct i2c_client *client, const struct i2c_device_id *id)
+static int eg_ec_probe(struct i2c_client *client)
 {
    struct device *dev = &client->dev;
    struct eg_ec *eg_ec;
@@ -951,7 +955,7 @@ static const struct of_device_id eg_ec_dt_ids[] = {
 MODULE_DEVICE_TABLE(of, eg_ec_dt_ids);
 
 static struct i2c_driver eg_ec_driver = {
-   .probe = eg_ec_probe,
+   .probe_new = eg_ec_probe,
    .remove = eg_ec_remove,
    .driver = {
       .name = "eg-ec-i2c",

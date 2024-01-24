@@ -53,12 +53,12 @@ So the Raspberry Pi linux (branch rpi-6.1.y) has to be built on a host computer 
 
 - Install the RPi Linux environment on the host :
 <pre>
-./install_env_host.sh
+./install_env_host.sh bullseye
 </pre>
 
 - Cross compile Linux and the MIPI drivers :
 <pre>
-./compile_linux_host.sh
+./compile_linux_host.sh rpi4
 </pre>
 
 - Install the Linux build in the **sources** folder :
@@ -134,7 +134,13 @@ gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)GR
 
 - RGB888
 <pre>
+Bullseye
 gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=640,height=480 ! videoconvert ! ximagesink sync=false
 gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=1280,height=1024 ! videoconvert ! ximagesink sync=false
+
+Bookworm
+gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=640,height=480 ! videoconvert ! autovideosink sync=false
+gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=1280,height=1024 ! videoconvert ! autovideosink sync=false
+
 </pre>
 
