@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. ./environment
+. ./environment $1 $2
 
 # Get official RPI Linux repo
 if [[ ! -d ${LINUX_RPI_SRC} ]]
@@ -17,7 +17,7 @@ then
       pushd ${LINUX_RPI_SRC}
       git checkout Ubuntu-raspi-6.5.0-1005.7
    else
-      echo "Error, specify a Linux name : bullseye or mantic"
+      echo "Error, specify a a supported Linux name : bullseye or mantic"
       exit
    fi
 fi

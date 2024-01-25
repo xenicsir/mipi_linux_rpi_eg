@@ -53,17 +53,17 @@ So the Raspberry Pi linux (branch rpi-6.1.y) has to be built on a host computer 
 
 - Install the RPi Linux environment on the host :
 <pre>
-./install_env_host.sh bullseye
+./install_env_host.sh bullseye rpi4
 </pre>
 
 - Cross compile Linux and the MIPI drivers :
 <pre>
-./compile_linux_host.sh rpi4
+./compile_linux_host.sh bullseye rpi4
 </pre>
 
 - Install the Linux build in the **sources** folder :
 <pre>
-./install_sources_host.sh
+./install_sources_host.sh bullseye rpi4
 </pre>
 
 - Copy the **sources** folder to the Raspberry Pi
@@ -87,7 +87,7 @@ So the Raspberry Pi linux (branch rpi-6.1.y) has to be built on a host computer 
 
 Note : on the host, it is possible to clean the **sources** folder with this command
 <pre>
-./clean_sources.sh
+./clean_sources.sh bullseye rpi4
 </pre>
 
 ### 3. Building MIPI driver on host for RPI OS with other RPi Linux versions

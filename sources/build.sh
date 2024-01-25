@@ -43,20 +43,36 @@ then
    then
       if [ $(grep -c Raspberry /proc/cpuinfo) -eq 1 ]
       then
+         codename=$(lsb_release -a 2>/dev/null |grep Codename| awk '{print $2}')
+         if [[ x$codename == xbullseye ]]
+         then
+            KVERSION=bullseye
+         elif [[ x$codename == xmantic ]]
+         then
+            KVERSION=mantic
+         else
+            echo "Error, $codename is not supported"
+            exit
+         fi
+      
+         KNAME=$(basename $(ls linux_install/kernel_bullseye/kernel*.img))
+         echo KNAME $KNAME
+      
          KERNEL_PATH=/boot/
-         if [[ -f /boot/kernel8.img ]] # Before Bookworm
+         if [[ -f /boot/$KNAME ]] # Before Bookworm
          then
             KERNEL_PATH=/boot
          fi
-         if [[ -f /boot/firmware/kernel8.img ]] # Bookworm
+         if [[ -f /boot/firmware/$KNAME ]] # Bookworm or Ubuntu
          then
             KERNEL_PATH=/boot/firmware
          fi
+         echo KERNEL_PATH $KERNEL_PATH
          
-         sudo cp $KERNEL_PATH/kernel8.img $KERNEL_PATH/kernel8.img.bak
-         sudo rsync -iahHAXxvz --progress --chown=root:root linux_install/kernel/kernel8.img $KERNEL_PATH/
+         sudo cp $KERNEL_PATH/$KNAME $KERNEL_PATH/$KNAME.bak
+         sudo rsync -iahHAXxvz --progress --chown=root:root linux_install/kernel_$KVERSION/$KNAME $KERNEL_PATH/
 
-         sudo rsync -iahHAXxvz --progress --chown=root:root linux_install/lib/modules/* /lib/modules/
+         sudo rsync -iahHAXxvz --progress --chown=root:root linux_install/modules/lib/modules/* /lib/modules/
          sudo depmod
       fi
    fi

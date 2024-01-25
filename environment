@@ -1,18 +1,67 @@
 #!/bin/bash
 
+if [[ x$1 == xbullseye ]]
+then
+   KVERSION=bullseye
+elif [[ x$1 == xmantic ]]
+then
+   KVERSION=mantic
+else
+   echo "Error, specify a supported Linux name : bullseye or mantic"
+   exit
+fi
+
+if [[ x$2 == xrpi4 ]]
+then
+   if [[ $1 == bullseye ]]
+   then
+      KERN_KERNEL=kernel8
+   else
+      echo "Error, $1 is not compatible with Rpi4"
+      exit
+   fi
+elif [[ x$2 == xrpi5 ]]
+then
+   if [[ $1 == mantic ]]
+   then
+      KERN_KERNEL=kernel_2712
+   else
+      echo "Error, $1 is not compatible with Rpi5"
+      exit
+   fi
+else
+   echo "Error, specify a supported Raspberry Pi target : rpi4 or rpi5"
+   exit
+fi
+
 # Directories
 CURRENT_PWD=$(pwd)
 LINUX_RPI=${CURRENT_PWD}
-LINUX_RPI_SRC=${LINUX_RPI}/kernel
-#LINUX_RPI_SRC=${LINUX_RPI}/kernel_6.1.21
-#LINUX_RPI_SRC=${LINUX_RPI}/kernel_6.5.0-1005.7
 LINUX_RPI_INSTALL=${LINUX_RPI}/sources/linux_install
-LINUX_RPI_INSTALL_KERNEL=${LINUX_RPI_INSTALL}/kernel
-LINUX_RPI_INSTALL_MODULES=${LINUX_RPI_INSTALL}
+LINUX_RPI_INSTALL_MODULES=${LINUX_RPI_INSTALL}/modules
+LINUX_RPI_SRC=${LINUX_RPI}/kernel_$KVERSION
+LINUX_RPI_INSTALL_KERNEL=${LINUX_RPI_INSTALL}/kernel_$KVERSION
 
 KERN_ARCH=arm64
 KERN_CROSS_COMPILE=aarch64-linux-gnu-
-KERN_KERNEL=kernel8
-#KERN_KERNEL=kernel_2712
+if [[ x$2 == xrpi4 ]]
+then
+   if [[ $1 == bullseye ]]
+   then
+      KERN_KERNEL=kernel8
+   else
+      echo "Error, $1 is not compatible with Rpi4"
+      exit
+   fi
+elif [[ x$2 == xrpi5 ]]
+then
+   if [[ $1 == mantic ]]
+   then
+      KERN_KERNEL=kernel_2712
+   else
+      echo "Error, $1 is not compatible with Rpi5"
+      exit
+   fi
+fi
 KERN_LOCALVERSION=-eg
 

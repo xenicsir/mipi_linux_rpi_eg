@@ -13,7 +13,7 @@ then
       rm -f lib
    elif [[ $1 == "install" ]]
    then
-      if [ ! -d lib ] # if the lib folder exists, do nothing, the module is to be installed from ../lib
+      if [ ! -d lib ] # if the lib folder exists, do nothing, the module is to be installed from the root build script
       then
          sudo make -C /${MODULES_FOLDER}/build M=$PWD INSTALL_MOD_DIR=${LIB_FOLDER} modules_install
          sudo depmod

@@ -3,8 +3,14 @@ then
    # On target
    if [[ $1 == "install" ]]
    then
-      sudo dtc -I dts -O dtb -o /boot/overlays/eg-ec-mipi.dtbo eg-ec-mipi.dts
-      sudo dtc -I dts -O dtb -o /boot/overlays/dione-ir.dtbo dione-ir.dts
+      if [[ -d "/boot/firmware/overlays" ]]
+      then
+         OVERLAY_FOLDER="/boot/firmware/overlays"  # For Ubuntu Rpi
+      else
+         OVERLAY_FOLDER="/boot/overlays"
+      fi
+      sudo dtc -I dts -O dtb -o $OVERLAY_FOLDER/eg-ec-mipi.dtbo eg-ec-mipi.dts
+      sudo dtc -I dts -O dtb -o $OVERLAY_FOLDER/dione-ir.dtbo dione-ir.dts
    fi
 else
    # On host

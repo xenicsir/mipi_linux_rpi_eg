@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. ./environment
+. ./environment $1 $2
 
 KVERSION=$(grep "^VERSION" ${LINUX_RPI_SRC}/Makefile | awk -F= '{print $2}' | sed 's/ //g')
 KPATCHLEVEL=$(grep "^PATCHLEVEL" ${LINUX_RPI_SRC}/Makefile | awk -F= '{print $2}' | sed 's/ //g')
@@ -15,10 +15,10 @@ done
 popd
 
 # Compile Linux kernel
-if [[ $1 == rpi4 ]]
+if [[ $2 == rpi4 ]]
 then
    DEFCONFIG=bcm2711_defconfig
-elif [[ $1 == rpi5 ]]
+elif [[ $2 == rpi5 ]]
 then
    DEFCONFIG=bcm2712_defconfig
 else
