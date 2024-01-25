@@ -32,7 +32,6 @@ else
    elif [[ $1 == "install" ]]
    then
       make -C $2 M=$PWD INSTALL_MOD_DIR=${LIB_FOLDER} modules_install INSTALL_MOD_PATH=$PWD modules_install
-      echo 3 $3
       if [[ x$3 != x ]]
       then
          make -C $2 M=$PWD INSTALL_MOD_DIR=${LIB_FOLDER} modules_install INSTALL_MOD_PATH=$3 modules_install
