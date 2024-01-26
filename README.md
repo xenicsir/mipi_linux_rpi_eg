@@ -48,29 +48,57 @@ The corresponding kernel headers are installed by default with Bookworm.
 
 ### 2. Building MIPI driver for RPi OS Bullseye
 
-For RPI OS Bullseye, the driver must be built on a host computer, as the last kernel headers for Bullseye (6.1.21) are not available in the packages repository.
-So the Raspberry Pi linux (branch rpi-6.1.y) has to be built on a host computer with a cross compiler.
+For RPI OS Bullseye, complete Linux kernel must be built from scratch. This is because the last kernel headers for Bullseye (6.1.21) are not available in the packages repository.
+The Raspberry Pi linux (branch rpi-6.1.y) can be built :
+- on a Raspberry Pi 4 (it takes around 2 hours and a half, it needs 6.5 GB of storage)
+- or on a host computer with a cross compiler (much faster)
 
-- Install the RPi Linux environment on the host :
+#### Building on a Raspberry Pi 4
+
+- The following packages have to be installed with apt : git gcc make flex bison libssl-dev
+- Copy the the current folder to the Raspberry Pi
+- Log to the Raspberry Pi and go to the current folder
+
+- Install the RPi Linux environment :
 <pre>
-./install_env_host.sh bullseye rpi4
+./install_env.sh bullseye rpi4
 </pre>
 
-- Cross compile Linux and the MIPI drivers :
+- Compile Linux and the MIPI drivers :
 <pre>
-./compile_linux_host.sh bullseye rpi4
+./compile_linux.sh bullseye rpi4
+</pre>
+
+- Install it :
+<pre>
+./install_sources.sh bullseye rpi4
+</pre>
+
+#### Building on a host computer
+
+- Install the RPi Linux environment :
+<pre>
+./install_env.sh bullseye rpi4
+</pre>
+
+- Compile Linux and the MIPI drivers :
+<pre>
+./compile_linux.sh bullseye rpi4
 </pre>
 
 - Install the Linux build in the **sources** folder :
 <pre>
-./install_sources_host.sh bullseye rpi4
+./install_sources.sh bullseye rpi4
 </pre>
 
 - Copy the **sources** folder to the Raspberry Pi
-- Log to the Raspberry Pi, go to the **sources** folder and install the drivers :
+- Log to the Raspberry Pi, go to the **sources** folder and install it :
 <pre>
 ./build.sh install
 </pre>
+
+#### Raspberry configuration
+
 - Customize /boot/config.txt :
 <pre>
 # Uncomment the following line to enable EngineCore camera
@@ -85,15 +113,15 @@ So the Raspberry Pi linux (branch rpi-6.1.y) has to be built on a host computer 
 
 - Reboot the RPi
 
-Note : on the host, it is possible to clean the **sources** folder with this command
+Note : it is possible to clean the **sources** folder with this command
 <pre>
 ./clean_sources.sh bullseye rpi4
 </pre>
 
-### 3. Building MIPI driver on host for RPI OS with other RPi Linux versions
+### 3. Building MIPI driver and Linux from scratch for RPI OS with other RPi Linux versions
 
 - Find the right branch and commit at https://github.com/raspberrypi/linux.git
-- Modify **install_env_host.sh** :
+- Modify **install_env.sh** :
 <pre>
 git clone -b <b>$your_branch</b> https://github.com/raspberrypi/linux.git ${LINUX_RPI_SRC}
 pushd ${LINUX_RPI_SRC}
@@ -143,4 +171,5 @@ gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=640,hei
 gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=1280,height=1024 ! videoconvert ! autovideosink sync=false
 
 </pre>
+
 

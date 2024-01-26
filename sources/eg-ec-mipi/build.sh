@@ -2,7 +2,7 @@
 
 LIB_FOLDER=kernel/drivers/media/i2c
 
-if [ $(grep -c Raspberry /proc/cpuinfo) -eq 1 ]
+if [[ x$2 == x ]]
 then
    # Do it on target
    MODULES_FOLDER=lib/modules/$(uname -r)

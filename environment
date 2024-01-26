@@ -1,5 +1,11 @@
 #!/bin/bash
 
+if [[ x$1 != xbullseye || x$2 != xrpi4 ]]
+then
+   echo "Error, $1 OS and $2 model are no supported"
+   exit
+fi
+
 if [[ x$1 == xbullseye ]]
 then
    KVERSION=bullseye

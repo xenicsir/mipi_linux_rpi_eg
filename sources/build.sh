@@ -1,10 +1,5 @@
 #!/bin/bash
 
-echo ARCH $ARCH 
-echo CROSS_COMPILE $CROSS_COMPILE
-echo KERNEL $KERNEL
-echo LOCALVERSION $LOCALVERSION
-
 # Build proprietary modules
 for file in *; do
    if [[ -d $file && $(echo $file | cut -c1-7) != "kernel-" ]]
@@ -56,7 +51,6 @@ then
          fi
       
          KNAME=$(basename $(ls linux_install/kernel_bullseye/kernel*.img))
-         echo KNAME $KNAME
       
          KERNEL_PATH=/boot/
          if [[ -f /boot/$KNAME ]] # Before Bookworm
@@ -67,7 +61,6 @@ then
          then
             KERNEL_PATH=/boot/firmware
          fi
-         echo KERNEL_PATH $KERNEL_PATH
          
          sudo cp $KERNEL_PATH/$KNAME $KERNEL_PATH/$KNAME.bak
          sudo rsync -iahHAXxvz --progress --chown=root:root linux_install/kernel_$KVERSION/$KNAME $KERNEL_PATH/
@@ -104,3 +97,4 @@ if [[ $1 == "clean" ]]
 then
    rm -rf linux_install
 fi
+
