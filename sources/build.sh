@@ -76,19 +76,26 @@ if [[ $1 == "install" ]]
 then
    if [ $(grep -c Raspberry /proc/cpuinfo) -eq 1 ]
    then
-      if [ ! $(grep "dtoverlay=eg-ec-mipi" /boot/config.txt) ]
+      if [[ -f "/boot/firmware/config.txt" ]]
       then
-         echo "# Uncomment the following line to enable EngineCore camera" | sudo tee -a /boot/config.txt
-         echo "#dtoverlay=eg-ec-mipi" | sudo tee -a /boot/config.txt
-         echo "# Uncomment the following line for EngineCore with 2 MIPI lanes. 1 lane by default." | sudo tee -a /boot/config.txt
-         echo "#dtparam=2lanes" | sudo tee -a /boot/config.txt
-         echo "# Uncomment the following line to modify the EngineCore I2C address. 0x16 by default." | sudo tee -a /boot/config.txt
-         echo "#dtparam=i2c-addr=0x16" | sudo tee -a /boot/config.txt
+         CONFIG_FILE="/boot/firmware/config.txt"
+      else
+         CONFIG_FILE="/boot/config.txt"
       fi
-      if [ ! $(grep "dtoverlay=dione-ir" /boot/config.txt) ]
+      echo Customize $CONFIG_FILE
+      if [ ! $(grep "dtoverlay=eg-ec-mipi" $CONFIG_FILE) ]
       then
-         echo "# Uncomment the following line to enable Dione camera" | sudo tee -a /boot/config.txt
-         echo "#dtoverlay=dione-ir" | sudo tee -a /boot/config.txt
+         echo "# Uncomment the following line to enable EngineCore camera" | sudo tee -a $CONFIG_FILE
+         echo "#dtoverlay=eg-ec-mipi" | sudo tee -a $CONFIG_FILE
+         echo "# Uncomment the following line for EngineCore with 2 MIPI lanes. 1 lane by default." | sudo tee -a $CONFIG_FILE
+         echo "#dtparam=2lanes" | sudo tee -a $CONFIG_FILE
+         echo "# Uncomment the following line to modify the EngineCore I2C address. 0x16 by default." | sudo tee -a $CONFIG_FILE
+         echo "#dtparam=i2c-addr=0x16" | sudo tee -a $CONFIG_FILE
+      fi
+      if [ ! $(grep "dtoverlay=dione-ir" $CONFIG_FILE) ]
+      then
+         echo "# Uncomment the following line to enable Dione camera" | sudo tee -a $CONFIG_FILE
+         echo "#dtoverlay=dione-ir" | sudo tee -a $CONFIG_FILE
       fi
    fi
 fi

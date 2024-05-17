@@ -4,7 +4,7 @@ This document present how to build and install the MIPI drivers of Exosens camer
 
 ### 0. Environment used with this building environment
 
-- Rpi model : Raspberry Pi 4 Model B
+- Rpi model : Raspberry Pi 4 Model B Rev 1.5
 - Host computer Ubuntu 20.04.1 LTS
 - Cross compiler gcc-9-aarch64-linux-gnu
 
@@ -19,10 +19,10 @@ cat /etc/os-release
 PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
 
 uname -a
-Linux pi <b>6.1.0-rpi7-rpi-v8</b> #1 SMP PREEMPT Debian 1:<b>6.1.63-1+rpt1</b> (2023-11-24) aarch64 GNU/Linux
+Linux pi <b>6.6.20+rpt-rpi-v8</b> #1 SMP PREEMPT Debian 1:<b>6.6.20-1+rpt1</b> (2024-03-07) aarch64 GNU/Linux
 </pre>
 
-The 6.1.0-rpi7-rpi-v8 Linux version, which is based on kernel 6.1.63, is not available for download and cross compilation on a host. So the MIPI driver hast to be built out of tree on the Raspberry Pi.
+The 6.6.20+rpt-rpi-v8 Linux version is not available for download and cross compilation on a host. So the MIPI driver hast to be built out of tree on the Raspberry Pi.
 The corresponding kernel headers are installed by default with Bookworm.
 
 - Be carefull that the **sources** folder is clean of object files (*.o, *.ko) and **linux_install** folder
@@ -32,7 +32,7 @@ The corresponding kernel headers are installed by default with Bookworm.
 ./build.sh make
 ./build.sh install
 </pre>
-- Customize /boot/config.txt :
+- Customize /boot/firmware/config.txt :
 <pre>
 # Uncomment the following line to enable EngineCore camera
 #dtoverlay=eg-ec-mipi
@@ -118,6 +118,7 @@ Note : it is possible to clean the **sources** folder with this command
 ./clean_sources.sh bullseye rpi4
 </pre>
 
+
 ### 3. Building MIPI driver and Linux from scratch for RPI OS with other RPi Linux versions
 
 - Find the right branch and commit at https://github.com/raspberrypi/linux.git
@@ -152,7 +153,7 @@ gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)RG
 gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)RGB, width=1280, height=1024" ! videoconvert ! autovideosink
 </pre>
 
-- Y16
+- Y16 : **not supported on Bullseye**
 <pre>
 gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)GRAY16_BE, width=640, height=480" ! videoconvert ! autovideosink
 gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)GRAY16_BE, width=1280, height=1024" ! videoconvert ! autovideosink
@@ -169,7 +170,6 @@ gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=1280,he
 Bookworm
 gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=640,height=480 ! videoconvert ! autovideosink sync=false
 gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=1280,height=1024 ! videoconvert ! autovideosink sync=false
-
 </pre>
 
 

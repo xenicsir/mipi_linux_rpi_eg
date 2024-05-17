@@ -952,7 +952,11 @@ static int detect_dione_ir(struct dione_ir *priv, u32 fpga_addr)
 
 	dev_dbg(dev, "probing fpga at address %#02x\n", fpga_addr);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,5,0)
+	priv->fpga_client = i2c_new_dummy(priv->tc35_client->adapter, fpga_addr);
+#else
 	priv->fpga_client = i2c_new_dummy_device(priv->tc35_client->adapter, fpga_addr);
+#endif
 	if (!priv->fpga_client)
 		return -ENOMEM;
 
@@ -1647,7 +1651,11 @@ static const struct of_device_id dione_ir_id[] = {
 MODULE_DEVICE_TABLE(of, dione_ir_id);
 
 static struct i2c_driver dione_ir_i2c_driver = {
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(6,2,0)
    .probe_new = dione_ir_probe,
+#else   
+   .probe = dione_ir_probe,
+#endif
    .remove = dione_ir_remove,
    .driver = {
       .name = "dioneir",

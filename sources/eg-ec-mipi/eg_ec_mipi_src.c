@@ -955,7 +955,11 @@ static const struct of_device_id eg_ec_dt_ids[] = {
 MODULE_DEVICE_TABLE(of, eg_ec_dt_ids);
 
 static struct i2c_driver eg_ec_driver = {
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(6,2,0)
    .probe_new = eg_ec_probe,
+#else   
+   .probe = eg_ec_probe,
+#endif
    .remove = eg_ec_remove,
    .driver = {
       .name = "eg-ec-i2c",
