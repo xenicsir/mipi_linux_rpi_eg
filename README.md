@@ -118,8 +118,50 @@ Note : it is possible to clean the **sources** folder with this command
 ./clean_sources.sh bullseye rpi4
 </pre>
 
+### 3. Building MIPI driver for RPi OS Ubuntu
 
-### 3. Building MIPI driver and Linux from scratch for RPI OS with other RPi Linux versions
+**Note :**
+- Ubuntu 22.04.4 LTS \
+Linux git repo : https://git.launchpad.net/~ubuntu-kernel/ubuntu/+source/linux-raspi/+git/jammy \
+git tag : Ubuntu-raspi-5.15.0-1046.49
+- Ubuntu 23.10 \
+Linux git repo : https://git.launchpad.net/~ubuntu-kernel/ubuntu/+source/linux-raspi/+git/mantic \
+git tag : Ubuntu-raspi-6.5.0-1005.7
+- Ubuntu 24.04 LTS \
+Linux git repo : https://git.launchpad.net/~ubuntu-kernel/ubuntu/+source/linux-raspi/+git/noble \
+git tag : Ubuntu-raspi-6.8.0-1001.1
+
+**Steps :**
+- The following packages have to be installed with apt : 
+<pre>
+sudo apt install gcc make flex bison libssl-dev
+</pre>
+- install Linux header if needed : 
+<pre>
+sudo apt install linux-headers-$(uname -r)
+</pre>
+- Be carefull that the **sources** folder is clean of object files (*.o, *.ko) and **linux_install** folder
+- Copy the **sources** folder to the Raspberry Pi
+- Log to the Raspberry Pi, go to the **sources** folder and build/install the drivers :
+<pre>
+./build.sh make
+./build.sh install
+</pre>
+- Customize /boot/firmware/config.txt :
+<pre>
+# Uncomment the following line to enable EngineCore camera
+#dtoverlay=eg-ec-mipi
+# Uncomment the following line for EngineCore 2 MIPI lanes. 1 lane by default.
+#dtparam=2lanes
+# Uncomment the following line to modify the EngineCore I2C address. 0x16 by default.
+#dtparam=i2c-addr=0x16
+# Uncomment the following line to enable Dione camera
+#dtoverlay=dione-ir
+</pre>
+
+- Reboot the RPi
+
+### 4. Building MIPI driver and Linux from scratch for RPI OS with other RPi Linux versions
 
 - Find the right branch and commit at https://github.com/raspberrypi/linux.git
 - Modify **install_env.sh** :
@@ -133,43 +175,6 @@ popd
 
 **Note : code in "sources" folder may not compile because of incompatible Linux version**
 
-## To grab video on target
+## To grab video on the target
 
-Install gstreamer if needed:
-<pre>
-sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-tools gstreamer1.0-x gstreamer1.0-alsa gstreamer1.0-gl gstreamer1.0-gtk3 gstreamer1.0-qt5 gstreamer1.0-pulseaudio
-</pre>
-
-### EngineCore cameras
-- YCbCr 4:2:2
-<pre>
-gst-launch-1.0 -v v4l2src device=/dev/video0 ! "video/x-raw, format=(string)UYVY, width=640, height=480" ! videoconvert ! autovideosink
-gst-launch-1.0 -v v4l2src device=/dev/video0 ! "video/x-raw, format=(string)UYVY, width=1280, height=1024" ! videoconvert ! autovideosink
-</pre>
-
-- RGB888
-<pre>
-gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)RGB, width=640, height=480" ! videoconvert ! autovideosink
-gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)RGB, width=1280, height=1024" ! videoconvert ! autovideosink
-</pre>
-
-- Y16 : **not supported on Bullseye**
-<pre>
-gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)GRAY16_BE, width=640, height=480" ! videoconvert ! autovideosink
-gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)GRAY16_BE, width=1280, height=1024" ! videoconvert ! autovideosink
-</pre>
-
-### Dione cameras
-
-- RGB888
-<pre>
-Bullseye
-gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=640,height=480 ! videoconvert ! ximagesink sync=false
-gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=1280,height=1024 ! videoconvert ! ximagesink sync=false
-
-Bookworm
-gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=640,height=480 ! videoconvert ! autovideosink sync=false
-gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=1280,height=1024 ! videoconvert ! autovideosink sync=false
-</pre>
-
-
+Refer to sources/README.md file.

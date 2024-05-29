@@ -26,11 +26,18 @@ then
       echo "Error, $1 is not compatible with Rpi4"
       exit
    fi
-elif [[ x$2 == xrpi5 ]]
+elif [[ x$2 == xrpi4 || x$2 = xrpi5 ]]
 then
    if [[ $1 == mantic ]]
    then
-      KERN_KERNEL=kernel_2712
+      if [[ x$2 == xrpi4 ]]
+      then
+         KERN_KERNEL=kernel_2712
+      fi
+      if [[ x$2 == xrpi5 ]]
+      then
+         KERN_KERNEL=kernel_2712
+      fi
    else
       echo "Error, $1 is not compatible with Rpi5"
       exit
