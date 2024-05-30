@@ -18,6 +18,8 @@
 #define STATUS_INT_ERR -128
 #define STATUS_FIFO_EMPTY 1
 
+int _ecctrl_i2c_write(__ecctrl_i2c_file_t file, uint8_t *buffer_i2c, int buffer_size, int timeout);
+int _ecctrl_i2c_read(__ecctrl_i2c_file_t file, uint8_t *buffer_i2c, int buffer_size, int timeout);
 
 static uint8_t crc8_table[CRC8_TABLE_SIZE];
 
@@ -72,7 +74,7 @@ int __ecctrl_i2c_timeout_set(__ecctrl_i2c_file_t file, int timeout)
    commTimeouts.WriteTotalTimeoutConstant      = timeout;
    if (!SetCommTimeouts(file, &commTimeouts))
    {
-      printf("%s : Error SetCommTimeouts\n", __func__);
+      // printf("%s : Error SetCommTimeouts\n", __func__);
       return -1;
    }
 
@@ -139,6 +141,8 @@ int __ecctrl_i2c_write_reg(__ecctrl_i2c_file_t file, ecctrl_i2c_t *args)
    int cpt_retry = 0;
    int cpt_retry_max = NB_RETRY_MAX;
    int status = 0;
+   struct __ecctrl_i2c_timespec start, end;
+   uint64_t delta_us;
 
    if (args)
    {
@@ -153,20 +157,21 @@ int __ecctrl_i2c_write_reg(__ecctrl_i2c_file_t file, ecctrl_i2c_t *args)
          args->i2c_timeout = I2C_TIMEOUT_DEFAULT;
       }
 
-      do
+      frame_size = args->data_size + 5; 	// size of the frame without CRC = op code (1) + register address (4) + data (size)
+      buffer_size = frame_size + 2; 		// buffer includes frame size byte (1) + frame (frame_size) + CRC (1)
+      if (args->deviceType == ECCTRL_UVC_TYPE)  // I2C timeout is added at the beginning of the frame
       {
-         error = 0;
-         frame_size = args->data_size + 5; 	// size of the frame without CRC = op code (1) + register address (4) + data (size)
-         buffer_size = frame_size + 2; 		// buffer includes frame size byte (1) + frame (frame_size) + CRC (1)
-         if (args->deviceType == ECCTRL_UVC_TYPE)  // I2C timeout is added at the beginning of the frame
+         buffer_size ++;
+      }
+      buffer_i2c =  __ecctrl_i2c_malloc(buffer_size);
+      if (buffer_i2c)
+      {
+         /************** Send Write register request *****************/
+         __ecctrl_i2c_get_time(&start);
+         do
          {
-            buffer_size ++;
-         }
-         buffer_i2c =  __ecctrl_i2c_malloc(buffer_size);
-         if (buffer_i2c)
-         {
-            /************** Send Write register request *****************/
             __ecctrl_i2c_print(LOG_DBG, "%s : Send Write register request\n", __func__);
+            error = 0;
             buffer_index = 0;
             buffer_start = 0;
             if (args->deviceType == ECCTRL_UVC_TYPE)
@@ -187,16 +192,36 @@ int __ecctrl_i2c_write_reg(__ecctrl_i2c_file_t file, ecctrl_i2c_t *args)
             {
                __ecctrl_i2c_print(LOG_ERROR_DBG, "%s : Error sending register Write request, ret = %d\n", __func__, ret);
                error = 1;
-               goto continue_write_reg;
+               __ecctrl_i2c_get_time(&end);
+               delta_us = (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_nsec - start.tv_nsec) / 1000;
+               __ecctrl_i2c_print(LOG_DBG, "%s : delta_us = %lld\n", __func__, delta_us);
+               if (delta_us / 1000 > args->i2c_timeout)
+               {
+                  cpt_retry ++;
+                  __ecctrl_i2c_get_time(&start);
+               }
+               __ecctrl_i2c_print(LOG_DBG, "%s : cpt_retry = %d, cpt_retry_max = %d\n", __func__, cpt_retry, cpt_retry_max);
+               if (cpt_retry >= cpt_retry_max)
+               {
+                  return STATUS_INT_ERR;
+               }
             }
+         } while (error > 0);
+
 #ifdef I2C_DELAY_ENABLE
-            if (args->i2c_tries_max >= 0)	// if i2c_tries_max < 0, disable sleep between i2c request. It allows to go faster (in updrade mode)
-            {
-               __ecctrl_i2c_usleep(I2C_DELAY);
-            }
+         if (args->i2c_tries_max >= 0)	// if i2c_tries_max < 0, disable sleep between i2c request. It allows to go faster (in updrade mode)
+         {
+            __ecctrl_i2c_usleep(I2C_DELAY);
+         }
 #endif
 
-            /************** Read status *****************/
+         /************** Read status *****************/
+         cpt_retry = 0;
+         __ecctrl_i2c_get_time(&start);
+         do
+         {
+            __ecctrl_i2c_print(LOG_DBG, "%s : Read status\n", __func__);
+            error = 0;
             buffer_size = 7;
             memset(buffer_i2c, 0, buffer_size);
             ret = _ecctrl_i2c_read(file, buffer_i2c, buffer_size, args->i2c_timeout);
@@ -243,27 +268,33 @@ int __ecctrl_i2c_write_reg(__ecctrl_i2c_file_t file, ecctrl_i2c_t *args)
 continue_write_reg:
             if (error == 1)
             {
-               if (cpt_retry ++ > cpt_retry_max-2)
+               __ecctrl_i2c_get_time(&end);
+               delta_us = (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_nsec - start.tv_nsec) / 1000;
+               __ecctrl_i2c_print(LOG_DBG, "%s : delta_us = %lld\n", __func__, delta_us);
+               if (delta_us / 1000 > args->i2c_timeout)
+               {
+                  cpt_retry ++;
+                  __ecctrl_i2c_get_time(&start);
+               }
+               __ecctrl_i2c_print(LOG_DBG, "%s : cpt_retry = %d, cpt_retry_max = %d\n", __func__, cpt_retry, cpt_retry_max);
+               if (cpt_retry >= cpt_retry_max)
                {
                   break;
                }
             }
-            __ecctrl_i2c_free(buffer_i2c);
-            buffer_i2c = NULL;
-         }
-         else
-         {
-            __ecctrl_i2c_print(LOG_FATAL, "%s : Error allocating memory\n", __func__);
-            return STATUS_INT_ERR;
-         }
-#ifdef I2C_DELAY_ENABLE
-         if (args->i2c_tries_max >= 0)	// if i2c_tries_max < 0, disable sleep between i2c request. It allows to go faster (in updrade mode)
-         {
-            __ecctrl_i2c_usleep(I2C_DELAY);
-         }
-#endif
-
-      } while (error > 0);
+   #ifdef I2C_DELAY_ENABLE
+            if (args->i2c_tries_max >= 0)	// if i2c_tries_max < 0, disable sleep between i2c request. It allows to go faster (in updrade mode)
+            {
+               __ecctrl_i2c_usleep(I2C_DELAY);
+            }
+   #endif
+         } while (error > 0);
+      }
+      else
+      {
+         __ecctrl_i2c_print(LOG_FATAL, "%s : Error allocating memory\n", __func__);
+         return STATUS_INT_ERR;
+      }
 
       if (buffer_i2c)
       {
@@ -304,6 +335,8 @@ int __ecctrl_i2c_read_reg(__ecctrl_i2c_file_t file, ecctrl_i2c_t *args)
    int cpt_retry = 0;
    int cpt_retry_max = NB_RETRY_MAX;
    int status = 0;
+   struct __ecctrl_i2c_timespec start, end;
+   uint64_t delta_us;
 
    if (args)
    {
@@ -318,65 +351,89 @@ int __ecctrl_i2c_read_reg(__ecctrl_i2c_file_t file, ecctrl_i2c_t *args)
          args->i2c_timeout = I2C_TIMEOUT_DEFAULT;
       }
 
-      do
+      /************** Send Read register request *****************/
+      frame_size = 6; 				// size of the frame without CRC = op code (1) + register address (4) + register size (1)
+      buffer_size = frame_size + 2; 	// buffer includes frame size byte (1) + frame (frame_size) + CRC (1)
+      if (args->deviceType == ECCTRL_UVC_TYPE)  // I2C timeout is added at the beginning of the frame
       {
-         error = 0;
-         /************** Send Read register request *****************/
-         frame_size = 6; 				// size of the frame without CRC = op code (1) + register address (4) + register size (1)
-         buffer_size = frame_size + 2; 	// buffer includes frame size byte (1) + frame (frame_size) + CRC (1)
-         if (args->deviceType == ECCTRL_UVC_TYPE)  // I2C timeout is added at the beginning of the frame
+         buffer_size ++;
+      }
+      buffer_i2c =  __ecctrl_i2c_malloc(buffer_size);
+      if (buffer_i2c)
+      {
+         cpt_retry = 0;
+         __ecctrl_i2c_get_time(&start);
+         do
          {
-            buffer_size ++;
-         }
-         __ecctrl_i2c_print(LOG_DBG, "%s buffer_size %d bytes\n", __func__, buffer_size);
-         buffer_i2c =  __ecctrl_i2c_malloc(buffer_size);
-         if (buffer_i2c)
-         {
-            __ecctrl_i2c_print(LOG_DBG, "%s : Send Read register request\n", __func__);
-            buffer_index = 0;
-            buffer_start = 0;
-            if (args->deviceType == ECCTRL_UVC_TYPE)
-            {
-               buffer_i2c[buffer_index++] = args->i2c_timeout / 1000;
-               buffer_start = 1;
-            }
-            buffer_i2c[buffer_index++] = frame_size;
-            buffer_i2c[buffer_index++] = CMD_READ;												         // OP code
-            buffer_i2c[buffer_index++] = (uint8_t)(args->data_address & 0xFF); 					// Register addr byte 0
-            buffer_i2c[buffer_index++] = (uint8_t)((args->data_address >> 8) & 0xFF); 			// Register addr byte 1
-            buffer_i2c[buffer_index++] = (uint8_t)((args->data_address >> 16) & 0xFF); 		// Register addr byte 2
-            buffer_i2c[buffer_index++] = (uint8_t)((args->data_address >> 24) & 0xFF); 		// Register addr byte 3
-            buffer_i2c[buffer_index++] = args->data_size;										// Register size
-            buffer_i2c[buffer_size - 1] = fct_crc8(buffer_i2c + buffer_start, buffer_size-1-buffer_start, CRC8_INIT_VALUE);	// CRC
+            error = 0;
+            __ecctrl_i2c_print(LOG_DBG, "%s buffer_size %d bytes\n", __func__, buffer_size);
+               __ecctrl_i2c_print(LOG_DBG, "%s : Send Read register request\n", __func__);
+               buffer_index = 0;
+               buffer_start = 0;
+               if (args->deviceType == ECCTRL_UVC_TYPE)
+               {
+                  buffer_i2c[buffer_index++] = args->i2c_timeout / 1000;
+                  buffer_start = 1;
+               }
+               buffer_i2c[buffer_index++] = frame_size;
+               buffer_i2c[buffer_index++] = CMD_READ;												         // OP code
+               buffer_i2c[buffer_index++] = (uint8_t)(args->data_address & 0xFF); 					// Register addr byte 0
+               buffer_i2c[buffer_index++] = (uint8_t)((args->data_address >> 8) & 0xFF); 			// Register addr byte 1
+               buffer_i2c[buffer_index++] = (uint8_t)((args->data_address >> 16) & 0xFF); 		// Register addr byte 2
+               buffer_i2c[buffer_index++] = (uint8_t)((args->data_address >> 24) & 0xFF); 		// Register addr byte 3
+               buffer_i2c[buffer_index++] = args->data_size;										      // Register size
+               buffer_i2c[buffer_size - 1] = fct_crc8(buffer_i2c + buffer_start, buffer_size-1-buffer_start, CRC8_INIT_VALUE);	// CRC
 
-            ret = _ecctrl_i2c_write(file, buffer_i2c, buffer_size, args->i2c_timeout);
-            if (ret <= 0)
-            {
-               __ecctrl_i2c_print(LOG_ERROR_DBG, "%s : Error sending register Read request, ret = %d\n", __func__, ret);
-               error = 1;
-               goto continue_read_reg;
-            }
+               ret = _ecctrl_i2c_write(file, buffer_i2c, buffer_size, args->i2c_timeout);
+               if (ret <= 0)
+               {
+                  __ecctrl_i2c_print(LOG_ERROR_DBG, "%s : Error sending register Read request, ret = %d\n", __func__, ret);
+                  error = 1;
+                  __ecctrl_i2c_get_time(&end);
+                  delta_us = (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_nsec - start.tv_nsec) / 1000;
+                  __ecctrl_i2c_print(LOG_DBG, "%s : delta_us = %lld\n", __func__, delta_us);
+                  if (delta_us / 1000 > args->i2c_timeout)
+                  {
+                     cpt_retry ++;
+                     __ecctrl_i2c_get_time(&start);
+                  }
+                  __ecctrl_i2c_print(LOG_DBG, "%s : cpt_retry = %d, cpt_retry_max = %d\n", __func__, cpt_retry, cpt_retry_max);
+                  if (cpt_retry >= cpt_retry_max)
+                  {
+                     return STATUS_INT_ERR;
+                  }
+               }
+         } while (error > 0);
+      }
+      else
+      {
+         __ecctrl_i2c_print(LOG_FATAL, "%s : Error allocating memory\n", __func__);
+         return STATUS_INT_ERR;
+      }
 
-            __ecctrl_i2c_free(buffer_i2c);
-            buffer_i2c = NULL;
-         }
-         else
-         {
-            __ecctrl_i2c_print(LOG_FATAL, "%s : Error allocating memory\n", __func__);
-            return STATUS_INT_ERR;
-         }
+      if (buffer_i2c)
+      {
+         __ecctrl_i2c_free(buffer_i2c);
+         buffer_i2c = NULL;
+      }
+
 #ifdef I2C_DELAY_ENABLE
-         if (args->i2c_tries_max >= 0)	// if i2c_tries_max < 0, disable sleep between i2c request. It allows to go faster (in updrade mode)
-         {
-            __ecctrl_i2c_usleep(I2C_DELAY);
-         }
+      if (args->i2c_tries_max >= 0)	// if i2c_tries_max < 0, disable sleep between i2c request. It allows to go faster (in updrade mode)
+      {
+         __ecctrl_i2c_usleep(I2C_DELAY);
+      }
 #endif
 
-         /************** Read data *****************/
-         buffer_size = args->data_size + 7; 	// buffer includes frame size byte (1) + ACK (1) + status (4) + data (size) + CRC (1)
-         buffer_i2c =  __ecctrl_i2c_malloc(buffer_size);
-         if (buffer_i2c)
+      /************** Read data *****************/
+      cpt_retry = 0;
+      buffer_size = args->data_size + 7; 	// buffer includes frame size byte (1) + ACK (1) + status (4) + data (size) + CRC (1)
+      buffer_i2c =  __ecctrl_i2c_malloc(buffer_size);
+      if (buffer_i2c)
+      {
+         __ecctrl_i2c_get_time(&start);
+         do
          {
+            error = 0;
             __ecctrl_i2c_print(LOG_DBG, "%s : _ecctrl_i2c_read %d data bytes\n", __func__, buffer_size);
             memset(buffer_i2c, 0, buffer_size);
 
@@ -394,10 +451,14 @@ int __ecctrl_i2c_read_reg(__ecctrl_i2c_file_t file, ecctrl_i2c_t *args)
                goto continue_read_reg;
             }
 
-            // for (i = 0; i < buffer_size; i++)
-            // {
-            // printf("%s : buffer_i2c[%d] = 0x%x\n", __func__, i, buffer_i2c[i]);
-            // }
+            if (LOG_LEVEL == LOG_DBG)
+            {
+               int i;
+               for (i = 0; i < buffer_size; i++)
+               {
+                  __ecctrl_i2c_print(LOG_ERROR_DBG,"%s : buffer_i2c[%d] = 0x%x\n", __func__, i, buffer_i2c[i]);
+               }
+            }
 
             crc8 = fct_crc8(buffer_i2c, buffer_size-1, CRC8_INIT_VALUE);
             status = buffer_i2c[2] | (buffer_i2c[3] << 8) | (buffer_i2c[4] << 16) | (buffer_i2c[5] << 24);
@@ -441,27 +502,33 @@ int __ecctrl_i2c_read_reg(__ecctrl_i2c_file_t file, ecctrl_i2c_t *args)
 continue_read_reg:
             if (error == 1)
             {
-               if (cpt_retry ++ > cpt_retry_max-2)
+               __ecctrl_i2c_get_time(&end);
+               delta_us = (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_nsec - start.tv_nsec) / 1000;
+               __ecctrl_i2c_print(LOG_DBG, "%s : delta_us = %lld\n", __func__, delta_us);
+               if (delta_us / 1000 > args->i2c_timeout)
+               {
+                  cpt_retry ++;
+                  __ecctrl_i2c_get_time(&start);
+               }
+               __ecctrl_i2c_print(LOG_DBG, "%s : cpt_retry = %d, cpt_retry_max = %d\n", __func__, cpt_retry, cpt_retry_max);
+               if (cpt_retry >= cpt_retry_max)
                {
                   break;
                }
             }
-
-            __ecctrl_i2c_free(buffer_i2c);
-            buffer_i2c = NULL;
-         }
-         else
-         {
-            __ecctrl_i2c_print(LOG_FATAL, "%s : Error allocating memory\n", __func__);
-            return STATUS_INT_ERR;
-         }
 #ifdef I2C_DELAY_ENABLE
-         if (args->i2c_tries_max >= 0)	// if i2c_tries_max < 0, disable sleep between i2c request. It allows to go faster (in updrade mode)
-         {
-            __ecctrl_i2c_usleep(I2C_DELAY);
-         }
+            if (args->i2c_tries_max >= 0)	// if i2c_tries_max < 0, disable sleep between i2c request. It allows to go faster (in updrade mode)
+            {
+               __ecctrl_i2c_usleep(I2C_DELAY);
+            }
 #endif
-      } while (error > 0);
+         } while (error > 0);
+      }
+      else
+      {
+         __ecctrl_i2c_print(LOG_FATAL, "%s : Error allocating memory\n", __func__);
+         return STATUS_INT_ERR;
+      }
 
       if (buffer_i2c)
       {
@@ -510,6 +577,9 @@ int __ecctrl_i2c_write_fifo(__ecctrl_i2c_file_t file, ecctrl_i2c_t *args)
    int control_size = 2; // frame size (1) + CRC (1)
    int header_size = 6; // op code (1) - fifo op (1) - fifo addr(4)
    int noerror = 0;
+   int error = 0;
+   struct __ecctrl_i2c_timespec start, end;
+   uint64_t delta_us;
 
    if (args)
    {
@@ -544,8 +614,8 @@ int __ecctrl_i2c_write_fifo(__ecctrl_i2c_file_t file, ecctrl_i2c_t *args)
          }
          while (size > 0)
          {
-            int error = 0;
             cpt_retry = 0;
+            __ecctrl_i2c_get_time(&start);
             do
             {
                error = 0;
@@ -583,17 +653,37 @@ int __ecctrl_i2c_write_fifo(__ecctrl_i2c_file_t file, ecctrl_i2c_t *args)
                {
                   __ecctrl_i2c_print(LOG_ERROR_DBG, "%s : Error sending Data Write FIFO request, ret = %d\n", __func__, ret);
                   error = 1;
-                  goto continue_write_fifo;
+                  __ecctrl_i2c_get_time(&end);
+                  delta_us = (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_nsec - start.tv_nsec) / 1000;
+                  __ecctrl_i2c_print(LOG_DBG, "%s : delta_us = %lld\n", __func__, delta_us);
+                  if (delta_us / 1000 > args->i2c_timeout)
+                  {
+                     cpt_retry ++;
+                     __ecctrl_i2c_get_time(&start);
+                  }
+                  __ecctrl_i2c_print(LOG_DBG, "%s : cpt_retry = %d, cpt_retry_max = %d\n", __func__, cpt_retry, cpt_retry_max);
+                  if (cpt_retry >= cpt_retry_max)
+                  {
+                     return STATUS_INT_ERR;
+                  }
                }
+            } while (error > 0);
+
 #ifdef I2C_DELAY_ENABLE
-               if (args->i2c_tries_max >= 0)	// if i2c_tries_max < 0, disable sleep between i2c request. It allows to go faster (in updrade mode)
-               {
-                  __ecctrl_i2c_usleep(I2C_DELAY);
-               }
+            if (args->i2c_tries_max >= 0)	// if i2c_tries_max < 0, disable sleep between i2c request. It allows to go faster (in updrade mode)
+            {
+               __ecctrl_i2c_usleep(I2C_DELAY);
+            }
 #endif
 
 
-               /************** Read status frame *****************/
+            /************** Read status frame *****************/
+            cpt_retry = 0;
+            __ecctrl_i2c_get_time(&start);
+            do
+            {
+               __ecctrl_i2c_print(LOG_DBG, "%s : Read status\n", __func__);
+               error = 0;
                buffer_size = 7;
                memset(buffer_i2c, 0, buffer_size);
                ret = _ecctrl_i2c_read(file, buffer_i2c, buffer_size, args->i2c_timeout);
@@ -647,7 +737,16 @@ continue_write_fifo:
                   {
                      fifoOp |= FIFO_OP_RETRY;
                   }
-                  if (cpt_retry ++ > cpt_retry_max-2)
+                  __ecctrl_i2c_get_time(&end);
+                  delta_us = (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_nsec - start.tv_nsec) / 1000;
+                  __ecctrl_i2c_print(LOG_DBG, "%s : delta_us = %lld\n", __func__, delta_us);
+                  if (delta_us / 1000 > args->i2c_timeout)
+                  {
+                     cpt_retry ++;
+                     __ecctrl_i2c_get_time(&start);
+                  }
+                  __ecctrl_i2c_print(LOG_DBG, "%s : cpt_retry = %d, cpt_retry_max = %d\n", __func__, cpt_retry, cpt_retry_max);
+                  if (cpt_retry >= cpt_retry_max)
                   {
                      break;
                   }
@@ -728,6 +827,9 @@ int __ecctrl_i2c_read_fifo(__ecctrl_i2c_file_t file, ecctrl_i2c_t *args)
    int control_size = 2; // frame size (1) + CRC (1)
    uint8_t overhead_rx = 8; // frame size byte (1) + op code (1) + status (4) + data read size (1) + crc (1)
    int noerror = 0;
+   struct __ecctrl_i2c_timespec start, end;
+   uint64_t delta_us;
+   int error = 0;
 
    if (args)
    {
@@ -758,8 +860,8 @@ int __ecctrl_i2c_read_fifo(__ecctrl_i2c_file_t file, ecctrl_i2c_t *args)
          }
          while (size > 0)
          {
-            int error = 0;
             cpt_retry = 0;
+            __ecctrl_i2c_get_time(&start);
             do
             {
                error = 0;
@@ -806,16 +908,36 @@ int __ecctrl_i2c_read_fifo(__ecctrl_i2c_file_t file, ecctrl_i2c_t *args)
                {
                   __ecctrl_i2c_print(LOG_ERROR_DBG, "%s : Error sending Data Read FIFO request, ret = %d\n", __func__, ret);
                   error = 1;
-                  goto continue_read_fifo;
+                  __ecctrl_i2c_get_time(&end);
+                  delta_us = (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_nsec - start.tv_nsec) / 1000;
+                  __ecctrl_i2c_print(LOG_DBG, "%s : delta_us = %lld\n", __func__, delta_us);
+                  if (delta_us / 1000 > args->i2c_timeout)
+                  {
+                     cpt_retry ++;
+                     __ecctrl_i2c_get_time(&start);
+                  }
+                  __ecctrl_i2c_print(LOG_DBG, "%s : cpt_retry = %d, cpt_retry_max = %d\n", __func__, cpt_retry, cpt_retry_max);
+                  if (cpt_retry >= cpt_retry_max)
+                  {
+                     return STATUS_INT_ERR;
+                  }
                }
+            } while (error > 0);
+
 #ifdef I2C_DELAY_ENABLE
-               if (args->i2c_tries_max >= 0)	// if i2c_tries_max < 0, disable sleep between i2c request. It allows to go faster (in updrade mode)
-               {
-                  __ecctrl_i2c_usleep(I2C_DELAY);
-               }
+            if (args->i2c_tries_max >= 0)	// if i2c_tries_max < 0, disable sleep between i2c request. It allows to go faster (in updrade mode)
+            {
+               __ecctrl_i2c_usleep(I2C_DELAY);
+            }
 #endif
 
-               /************** Read data *****************/
+            /************** Read data *****************/
+            cpt_retry = 0;
+            __ecctrl_i2c_get_time(&start);
+            do
+            {
+               __ecctrl_i2c_print(LOG_DBG, "%s : Read status\n", __func__);
+               error = 0;
                memset(buffer_i2c, 0, buffer_size_max);
                buffer_size = payload_size + overhead_rx;
                ret = _ecctrl_i2c_read(file, buffer_i2c, buffer_size, args->i2c_timeout);
@@ -898,7 +1020,16 @@ continue_read_fifo:
                   {
                      fifoOp |= FIFO_OP_RETRY;
                   }
-                  if (cpt_retry ++ > cpt_retry_max-2)
+                  __ecctrl_i2c_get_time(&end);
+                  delta_us = (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_nsec - start.tv_nsec) / 1000;
+                  __ecctrl_i2c_print(LOG_DBG, "%s : delta_us = %lld\n", __func__, delta_us);
+                  if (delta_us / 1000 > args->i2c_timeout)
+                  {
+                     cpt_retry ++;
+                     __ecctrl_i2c_get_time(&start);
+                  }
+                  __ecctrl_i2c_print(LOG_DBG, "%s : cpt_retry = %d, cpt_retry_max = %d\n", __func__, cpt_retry, cpt_retry_max);
+                  if (cpt_retry >= cpt_retry_max)
                   {
                      break;
                   }

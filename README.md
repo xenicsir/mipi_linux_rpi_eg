@@ -132,11 +132,11 @@ Linux git repo : https://git.launchpad.net/~ubuntu-kernel/ubuntu/+source/linux-r
 git tag : Ubuntu-raspi-6.8.0-1001.1
 
 **Steps :**
-- The following packages have to be installed with apt : 
+- Install packages for build : 
 <pre>
 sudo apt install gcc make flex bison libssl-dev
 </pre>
-- install Linux header if needed : 
+- Install Linux headers if needed : 
 <pre>
 sudo apt install linux-headers-$(uname -r)
 </pre>
@@ -161,7 +161,7 @@ sudo apt install linux-headers-$(uname -r)
 
 - Reboot the RPi
 
-### 4. Building MIPI driver and Linux from scratch for RPI OS with other RPi Linux versions
+### 4. Building MIPI driver and Linux from scratch for other RPI OS versions
 
 - Find the right branch and commit at https://github.com/raspberrypi/linux.git
 - Modify **install_env.sh** :
@@ -177,4 +177,4 @@ popd
 
 ## To grab video on the target
 
-Refer to sources/README.md file.
+Refer to sources/streaming_examples.txt file.

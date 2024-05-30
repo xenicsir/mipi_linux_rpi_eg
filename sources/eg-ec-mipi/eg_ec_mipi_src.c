@@ -95,6 +95,8 @@ struct eg_ec {
    int mbus_code_index;
 };
 
+int eg_ec_chnod_open (struct inode * pInode, struct file * file);
+int eg_ec_chnod_release (struct inode * pInode, struct file * file);
 
 static inline struct eg_ec *to_eg_ec(struct v4l2_subdev *_sd)
 {
@@ -353,8 +355,8 @@ static inline int eg_ec_mipi_read_reg(struct i2c_client * i2c_client, uint16_t a
             args.data_address = address;
             args.data = data;
             args.data_size = size;
-            args.i2c_timeout = 0;
-            args.i2c_tries_max = -1;
+            args.i2c_timeout = 1000;
+            args.i2c_tries_max = 1;
             args.cb = NULL;
             err = __ecctrl_i2c_read_reg(i2c_client, &args);
             i2c_clients[i].i2c_locked = 0;
@@ -440,13 +442,21 @@ static int eg_ec_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
    struct eg_ec *eg_ec = to_eg_ec(sd);
    struct v4l2_mbus_framefmt *try_img_fmt =
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0)
       v4l2_subdev_get_try_format(sd, fh->state, 0);
+#else
+      v4l2_subdev_state_get_format(fh->state, 0);
+#endif
    struct v4l2_rect *try_crop;
 
    *try_img_fmt = eg_ec->fmt;
 
    /* Initialize try_crop rectangle. */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0)
    try_crop = v4l2_subdev_get_try_crop(sd, fh->state, 0);
+#else
+   try_crop = v4l2_subdev_state_get_crop(fh->state, 0);
+#endif
    try_crop->top = 0;
    try_crop->left = 0;
    try_crop->width = try_img_fmt->width;
@@ -518,6 +528,9 @@ static int eg_ec_enum_frame_size(struct v4l2_subdev *sd,
    {
       dev_err(&eg_ec->i2c_client->dev, "Failed to get detector's width.\n");
    }
+
+   udelay(10000);
+
    // Get detector height from the camera
    err = eg_ec_mipi_read_reg(eg_ec->i2c_client, EC_FEATURE_DETECTOR_HEIGHT, (uint8_t*)&detectorHeight, sizeof(detectorHeight));
    if (!err)
@@ -548,7 +561,11 @@ static int eg_ec_get_pad_format(struct v4l2_subdev *sd,
 
    if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
       struct v4l2_mbus_framefmt *try_fmt =
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0)
          v4l2_subdev_get_try_format(&eg_ec->sd, sd_state,
+#else
+         v4l2_subdev_state_get_format(sd_state,
+#endif
                fmt->pad);
       fmt->format = *try_fmt;
    }
@@ -579,6 +596,8 @@ static int eg_ec_get_pad_format(struct v4l2_subdev *sd,
             eg_ec->fmt.code = MEDIA_BUS_FMT_UYVY8_1X16;
             break;
       }
+      
+      udelay(10000);
 
       // Get detector width from the camera
       err = eg_ec_mipi_read_reg(eg_ec->i2c_client, EC_FEATURE_DETECTOR_WIDTH, (uint8_t*)&detectorWidth, sizeof(detectorWidth));
@@ -590,6 +609,9 @@ static int eg_ec_get_pad_format(struct v4l2_subdev *sd,
       {
          dev_err(&eg_ec->i2c_client->dev, "Failed to get detector's width.\n");
       }
+
+      udelay(10000);
+
       // Get detector height from the camera
       err = eg_ec_mipi_read_reg(eg_ec->i2c_client, EC_FEATURE_DETECTOR_HEIGHT, (uint8_t*)&detectorHeight, sizeof(detectorHeight));
       if (!err)
@@ -639,7 +661,11 @@ static int eg_ec_set_pad_format(struct v4l2_subdev *sd,
       V4L2_MAP_XFER_FUNC_DEFAULT(fmt->format.colorspace);
 
    if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0)
       format = v4l2_subdev_get_try_format(&eg_ec->sd, sd_state, fmt->pad);
+#else
+      format = v4l2_subdev_state_get_format(sd_state, fmt->pad);
+#endif
    else
       format = &eg_ec->fmt;
 

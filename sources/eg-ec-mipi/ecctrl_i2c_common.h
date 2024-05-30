@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <sys/ioctl.h>
 #include <poll.h>
+#include <time.h>
 
 #else // __KERNEL__
 
@@ -82,9 +83,11 @@
 #define __ecctrl_i2c_free kfree
 #define __ecctrl_i2c_usleep fsleep
 #define __ecctrl_i2c_file_t struct i2c_client *
+#define __ecctrl_i2c_timespec timespec64
 
 #define __ecctrl_i2c_write(file, buffer, size) i2c_master_send(file, buffer, size)
 #define __ecctrl_i2c_read(file, buffer, size) i2c_master_recv(file, buffer, size)
+#define __ecctrl_i2c_get_time(time) ktime_get_ts64(time)
 
 #else	// __KERNEL__
 
@@ -96,9 +99,11 @@
 #define __ecctrl_i2c_free free
 #define __ecctrl_i2c_usleep usleep
 #define __ecctrl_i2c_file_t int
+#define __ecctrl_i2c_timespec timespec
 
 #define __ecctrl_i2c_write(file, buffer, size) write(file, buffer, size)
 #define __ecctrl_i2c_read(file, buffer, size) read(file, buffer, size)
+#define __ecctrl_i2c_get_time(time) clock_gettime(CLOCK_MONOTONIC_RAW, time)
 
 #endif	// __KERNEL__
 #else // LINUX

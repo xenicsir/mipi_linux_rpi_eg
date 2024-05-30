@@ -57,8 +57,7 @@
 						remote-endpoint = <&csi_ep>;
                   data-lanes = <1 2>;
 						clock-lanes = <0>;
-						clock-noncontinuous;
-                  link-frequencies = /bits/ 64 <249000000 500000000>;
+                  link-frequencies = /bits/ 64 <240000000 497000000>;
 					};
 				};
 			};
@@ -83,8 +82,7 @@
 					remote-endpoint = <&xenics_dione_ir_0>;
                data-lanes = <1 2>;
 					clock-lanes = <0>;
-					clock-noncontinuous;
-               link-frequencies = /bits/ 64 <249000000 500000000>;
+               link-frequencies = /bits/ 64 <240000000 497000000>;
 				};
 			};
 		};

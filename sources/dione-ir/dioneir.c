@@ -190,6 +190,9 @@ static const struct dione_ir_mode dione_ir_supported_modes[] = {
         },
 };
 
+int dione_ir_chnod_open (struct inode * pInode, struct file * file);
+int dione_ir_chnod_release (struct inode * pInode, struct file * file);
+
 static void dione_ir_regmap_format_32_ble(void *buf, unsigned int val)
 {
    u8 *b = buf;
@@ -201,8 +204,6 @@ static void dione_ir_regmap_format_32_ble(void *buf, unsigned int val)
    b[3] = val >> 16;
    val_after = *(int*)buf;
 }
-
-
 
 static int dione_ir_find_frmfmt(u32 width, u32 height)
 {
@@ -1076,13 +1077,21 @@ static int dione_ir_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
    struct dione_ir *dione_ir = to_dione_ir(sd);
    struct v4l2_mbus_framefmt *try_img_fmt =
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0)
       v4l2_subdev_get_try_format(sd, fh->state, 0);
+#else
+      v4l2_subdev_state_get_format(fh->state, 0);
+#endif
    struct v4l2_rect *try_crop;
 
    *try_img_fmt = dione_ir->fmt;
 
    // Initialize try_crop rectangle
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0)
    try_crop = v4l2_subdev_get_try_crop(sd, fh->state, 0);
+#else
+   try_crop = v4l2_subdev_state_get_crop(fh->state, 0);
+#endif
    try_crop->top = 0;
    try_crop->left = 0;
    try_crop->width = try_img_fmt->width;
@@ -1166,7 +1175,11 @@ static int dione_ir_get_pad_format(struct v4l2_subdev *sd,
 
    if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
       struct v4l2_mbus_framefmt *try_fmt =
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0)
          v4l2_subdev_get_try_format(&dione_ir->sd, sd_state,
+#else
+         v4l2_subdev_state_get_format(sd_state,
+#endif
                fmt->pad);
       fmt->format = *try_fmt;
    }
@@ -1223,7 +1236,11 @@ static int dione_ir_set_pad_format(struct v4l2_subdev *sd,
    // fmt->format.height = mode->height;
 
    if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0)
       format = v4l2_subdev_get_try_format(&dione_ir->sd, sd_state, fmt->pad);
+#else
+      format = v4l2_subdev_state_get_format(sd_state, fmt->pad);
+#endif
    else
       format = &dione_ir->fmt;
 

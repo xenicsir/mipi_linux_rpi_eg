@@ -2,15 +2,15 @@
 
 # Build proprietary modules
 for file in *; do
-   if [[ -d $file && $(echo $file | cut -c1-7) != "kernel-" ]]
+   if [[ -d $file && $file != "kernel_patches" ]]
    then
-      pushd $file
-      if [[ -f build.sh ]]
-      then
-         echo $1 $file
-         ./build.sh $@
-      fi
-      popd
+     pushd $file
+     if [[ -f build.sh ]]
+     then
+        echo $1 $file
+        ./build.sh $@
+     fi
+     popd
    fi
 done
 
@@ -18,7 +18,7 @@ done
 if [ $(grep -c Raspberry /proc/cpuinfo) -eq 1 ]
 then
    KERNEL_VERSION=$(uname -r | rev | cut -d '-' -f '2-' | rev)
-   file=$(echo "kernel-"$KERNEL_VERSION)
+   file=$(echo "kernel_patches/"$KERNEL_VERSION)
    if [[ -d $file ]]
    then
       pushd $file

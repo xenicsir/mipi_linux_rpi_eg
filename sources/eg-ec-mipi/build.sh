@@ -31,10 +31,10 @@ else
       make -C $2 M=$PWD
    elif [[ $1 == "install" ]]
    then
-      make -C $2 M=$PWD INSTALL_MOD_DIR=${LIB_FOLDER} modules_install INSTALL_MOD_PATH=$PWD modules_install
+      make -C $2 M=$PWD INSTALL_MOD_DIR=${LIB_FOLDER} INSTALL_MOD_PATH=$PWD modules_install
       if [[ x$3 != x ]]
       then
-         make -C $2 M=$PWD INSTALL_MOD_DIR=${LIB_FOLDER} modules_install INSTALL_MOD_PATH=$3 modules_install
+         make -C $2 M=$PWD INSTALL_MOD_DIR=${LIB_FOLDER} INSTALL_MOD_PATH=$3 modules_install
       fi
    elif [[ $1 == "clean" ]]
    then
