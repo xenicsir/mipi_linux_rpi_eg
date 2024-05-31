@@ -53,6 +53,12 @@ The Raspberry Pi linux (branch rpi-6.1.y) can be built :
 - on a Raspberry Pi 4 (it takes around 2 hours and a half, it needs 6.5 GB of storage)
 - or on a host computer with a cross compiler (much faster)
 
+Note : the original kernel Image and modules version 6.1.21-v8+ are replaced by a 6.1.21-v8-eg version.
+<pre>
+$ uname -r
+6.1.21-v8-eg
+</pre>
+
 #### Building on a Raspberry Pi 4
 
 - The following packages have to be installed with apt : git gcc make flex bison libssl-dev
