@@ -49,6 +49,8 @@ static int quick_mode = 1;
 module_param(test_mode, int, 0644);
 module_param(quick_mode, int, 0644);
 
+s64 link_freq_menu_items[1];
+
 /* Array of all the mbus formats that we'll accept */
 u32 dione_ir_mbus_codes[] = {
    MEDIA_BUS_FMT_BGR888_1X24,
@@ -995,7 +997,7 @@ static int detect_dione_ir(struct dione_ir *priv, u32 fpga_addr)
          if (i2c_clients[i].i2c_client == NULL)
          {
             i2c_clients[i].i2c_client = priv->fpga_client;
-            sprintf(i2c_clients[i].chnod_name,  "%s-i2c-%02x", dev_driver_string(dev), fpga_addr);
+            sprintf(i2c_clients[i].chnod_name,  "%s-i2c-%s-%02x", dev_driver_string(dev),  dev_name(dev), fpga_addr);
             dev_info(dev, "chnod: /dev/%s\n", i2c_clients[i].chnod_name);
             err = dione_ir_chnod_register_device(i);
             if (err)
@@ -1104,7 +1106,7 @@ static int dione_ir_set_ctrl(struct v4l2_ctrl *ctrl)
 {
    struct dione_ir *dione_ir =
       container_of(ctrl->handler, struct dione_ir, ctrl_handler);
-   int ret;
+   int ret = 0;
 	struct device *dev = &dione_ir->tc35_client->dev;
 
    switch (ctrl->id) {
@@ -1220,13 +1222,13 @@ static int dione_ir_set_pad_format(struct v4l2_subdev *sd,
    fmt->format.code = dione_ir_mbus_codes[dione_ir->mbus_code_index];
    fmt->format.field = V4L2_FIELD_NONE;
    fmt->format.colorspace = V4L2_COLORSPACE_SRGB;
-   fmt->format.ycbcr_enc =
-      V4L2_MAP_YCBCR_ENC_DEFAULT(fmt->format.colorspace);
-   fmt->format.quantization =
-      V4L2_MAP_QUANTIZATION_DEFAULT(true, fmt->format.colorspace,
-            fmt->format.ycbcr_enc);
-   fmt->format.xfer_func =
-      V4L2_MAP_XFER_FUNC_DEFAULT(fmt->format.colorspace);
+   // fmt->format.ycbcr_enc =
+      // V4L2_MAP_YCBCR_ENC_DEFAULT(fmt->format.colorspace);
+   // fmt->format.quantization =
+      // V4L2_MAP_QUANTIZATION_DEFAULT(true, fmt->format.colorspace,
+            // fmt->format.ycbcr_enc);
+   // fmt->format.xfer_func =
+      // V4L2_MAP_XFER_FUNC_DEFAULT(fmt->format.colorspace);
 
    // TODO
    // mode = v4l2_find_nearest_size(dione_ir_supported_modes,
@@ -1257,9 +1259,14 @@ static int dione_ir_get_selection(struct v4l2_subdev *sd,
 	// struct device *dev = &dione_ir->tc35_client->dev;
 
    switch (sel->target) {
-      case V4L2_SEL_TGT_CROP:
+      // case V4L2_SEL_TGT_CROP:
       case V4L2_SEL_TGT_NATIVE_SIZE:
-      case V4L2_SEL_TGT_CROP_DEFAULT:
+//      case V4L2_SEL_TGT_CROP_DEFAULT:
+//      case V4L2_SEL_TGT_CROP_BOUNDS:
+//      case V4L2_SEL_TGT_COMPOSE:
+      // case V4L2_SEL_TGT_COMPOSE_DEFAULT:
+      // case V4L2_SEL_TGT_COMPOSE_BOUNDS:
+      // case V4L2_SEL_TGT_COMPOSE_PADDED:
          sel->r.top = 0;
          sel->r.left = 0;
          sel->r.width = dione_ir->fmt.width;
@@ -1359,24 +1366,58 @@ static int dione_ir_init_controls(struct dione_ir *dione_ir)
 	struct device *dev = &dione_ir->tc35_client->dev;
    struct v4l2_ctrl_handler *ctrl_hdlr;
    struct v4l2_ctrl *ctrl;
+	struct v4l2_fwnode_device_properties props;
    int ret;
    int hblank;
+   int i;
+	struct tc358746_input input;
+	struct tc358746 params;
 
    ctrl_hdlr = &dione_ir->ctrl_handler;
-   ret = v4l2_ctrl_handler_init(ctrl_hdlr, 4);
+   ret = v4l2_ctrl_handler_init(ctrl_hdlr, 16);
    if (ret)
       return ret;
 
    mutex_init(&dione_ir->mutex);
    ctrl_hdlr->lock = &dione_ir->mutex;
 
+	input.mbus_fmt = dione_ir_mbus_codes[dione_ir->mbus_code_index]; // TODO support multpible codes
+	input.refclk = dione_ir->def_clk_freq;
+	input.num_lanes = dione_ir_ep_cfg.bus.mipi_csi2.num_data_lanes;
+   input.discontinuous_clk = dione_ir_ep_cfg.bus.mipi_csi2.flags & V4L2_MBUS_CSI2_NONCONTINUOUS_CLOCK ? 1 : 0;
+	input.pclk = dione_ir_supported_modes[dione_ir->mode].pix_clk_hz;
+	input.width = dione_ir_supported_modes[dione_ir->mode].width;
+	input.hblank = dione_ir_supported_modes[dione_ir->mode].line_length - dione_ir_supported_modes[dione_ir->mode].width;
+
+	for (i = 0; i < dione_ir_ep_cfg.nr_of_link_frequencies; i++) {
+		input.link_frequency = dione_ir_ep_cfg.link_frequencies[i];
+      link_freq_menu_items[0] = input.link_frequency;
+		if (tc358746_calculate(&params, &input) == 0)
+			break;
+	}
+
+	if (i >= dione_ir_ep_cfg.nr_of_link_frequencies) {
+		dev_err(dev, "could not calculate parameters for tc358746\n");
+		return -EINVAL;
+	}
+
+   dev_err(dev, "Link frequency = %lld\n", link_freq_menu_items[0]);
+   ctrl = v4l2_ctrl_new_int_menu(ctrl_hdlr, &sensor_ctrl_ops, V4L2_CID_LINK_FREQ,
+                                0, 0, link_freq_menu_items);
+   // v4l2_ctrl_new_std(ctrl_hdlr, &sensor_ctrl_ops, V4L2_CID_LINK_FREQ,
+         // input.link_frequency, input.link_frequency, 1, input.link_frequency);
+
+   if (ctrl)
+          ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
+
    /* By default, PIXEL_RATE is read only */
    v4l2_ctrl_new_std(ctrl_hdlr, &sensor_ctrl_ops, V4L2_CID_PIXEL_RATE,
-         1, 1, 1, 1);
+         20000000, 20000000, 1, 20000000);
 
    /* Initial vblank/hblank/exposure parameters based on current mode */
    ctrl = v4l2_ctrl_new_std(ctrl_hdlr, &sensor_ctrl_ops, V4L2_CID_VBLANK,
-         1, 1, 1, 1);
+         0, 0, 1, 0);
    if (ctrl)
       ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
@@ -1388,9 +1429,13 @@ static int dione_ir_init_controls(struct dione_ir *dione_ir)
       dione_ir->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
    ctrl = v4l2_ctrl_new_std(ctrl_hdlr, &sensor_ctrl_ops, V4L2_CID_EXPOSURE,
-         1, 1, 1, 1);
+         1, 10, 1, 1);
    if (ctrl)
       ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
+	v4l2_ctrl_new_std(ctrl_hdlr, &sensor_ctrl_ops, V4L2_CID_ANALOGUE_GAIN,
+			  1, 10,
+			  1, 1);
 
    if (ctrl_hdlr->error) {
       ret = ctrl_hdlr->error;
@@ -1398,6 +1443,15 @@ static int dione_ir_init_controls(struct dione_ir *dione_ir)
             __func__, ret);
       goto error;
    }
+
+	ret = v4l2_fwnode_device_parse(dev, &props);
+	if (ret)
+		goto error;
+
+	ret = v4l2_ctrl_new_fwnode_properties(ctrl_hdlr, &sensor_ctrl_ops,
+					      &props);
+	if (ret)
+		goto error;
 
    dione_ir->sd.ctrl_handler = ctrl_hdlr;
 
@@ -1570,14 +1624,14 @@ static int dione_ir_probe(struct i2c_client *client)
    dione_ir->fmt.code = dione_ir_mbus_codes[0];
    dione_ir->fmt.field = V4L2_FIELD_NONE;
   	dione_ir->fmt.colorspace = V4L2_COLORSPACE_SRGB;
-   dione_ir->fmt.ycbcr_enc =
-      V4L2_MAP_YCBCR_ENC_DEFAULT(dione_ir->fmt.colorspace);
-   dione_ir->fmt.quantization =
-      V4L2_MAP_QUANTIZATION_DEFAULT(true,
-            dione_ir->fmt.colorspace,
-            dione_ir->fmt.ycbcr_enc);
-   dione_ir->fmt.xfer_func =
-      V4L2_MAP_XFER_FUNC_DEFAULT(dione_ir->fmt.colorspace);
+   // dione_ir->fmt.ycbcr_enc =
+      // V4L2_MAP_YCBCR_ENC_DEFAULT(dione_ir->fmt.colorspace);
+   // dione_ir->fmt.quantization =
+      // V4L2_MAP_QUANTIZATION_DEFAULT(true,
+            // dione_ir->fmt.colorspace,
+            // dione_ir->fmt.ycbcr_enc);
+   // dione_ir->fmt.xfer_func =
+      // V4L2_MAP_XFER_FUNC_DEFAULT(dione_ir->fmt.colorspace);
 
    ret = dione_ir_init_controls(dione_ir);
    if (ret)
