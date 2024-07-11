@@ -1,0 +1,18 @@
+#!/bin/sh
+
+case "$1" in
+  start)
+    eg_media_configure_rp1_cfe.sh    
+    ;;
+  stop)
+    ;;
+  restart)
+    ;;
+  force-reload)
+    ;;
+  *)
+    echo "Usage: $0 start" >&2
+    exit 3
+    ;;
+esac
+

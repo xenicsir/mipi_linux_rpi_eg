@@ -1401,7 +1401,7 @@ static int dione_ir_init_controls(struct dione_ir *dione_ir)
 		return -EINVAL;
 	}
 
-   dev_err(dev, "Link frequency = %lld\n", link_freq_menu_items[0]);
+   dev_info(dev, "Link frequency = %lld\n", link_freq_menu_items[0]);
    ctrl = v4l2_ctrl_new_int_menu(ctrl_hdlr, &sensor_ctrl_ops, V4L2_CID_LINK_FREQ,
                                 0, 0, link_freq_menu_items);
    // v4l2_ctrl_new_std(ctrl_hdlr, &sensor_ctrl_ops, V4L2_CID_LINK_FREQ,

@@ -71,11 +71,11 @@ then
    fi
 fi
 
-# Customize config.txt on target
 if [[ $1 == "install" ]]
 then
    if [ $(grep -c Raspberry /proc/cpuinfo) -eq 1 ]
    then
+      # Customize config.txt on target
       if [[ -f "/boot/firmware/config.txt" ]]
       then
          CONFIG_FILE="/boot/firmware/config.txt"
@@ -97,6 +97,10 @@ then
          echo "# Uncomment the following line to enable Dione camera" | sudo tee -a $CONFIG_FILE
          echo "#dtoverlay=dione-ir" | sudo tee -a $CONFIG_FILE
       fi
+
+   # Install rootfs scripts
+   sudo rsync -iahHAXxvz --progress rootfs/ /
+
    fi
 fi
 
