@@ -179,9 +179,9 @@ static const struct dione_ir_mode dione_ir_supported_modes[] = {
                .pix_clk_hz = 83000000,
         },
         {
-               .width = 1280,
-               .height = 1024,
-               .line_length = 1334,
+               .width = 1024,
+               .height = 768,
+               .line_length = 1079,
                .pix_clk_hz = 83000000,
         },
         {
