@@ -1,5 +1,7 @@
 This document present how to build and install the MIPI drivers of Exosens cameras for Raspberry Pi.
 
+The MIPI_deployment.xlsx sheet presents a an overview of the supported cameras/boards/OS versions.
+
 ## Building environment
 
 ### 0. Environment used with this building environment
