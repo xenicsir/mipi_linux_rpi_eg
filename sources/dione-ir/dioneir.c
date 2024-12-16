@@ -27,6 +27,8 @@
 #include "tc358746_regs.h"
 #include "tc358746_calculation.h"
 
+//#define DBG_TC358746
+
 #define MAX_I2C_CLIENTS_NUMBER 128
 
 #define DIONE_IR_REG_WIDTH_MAX		0x0002f028
@@ -402,8 +404,15 @@ static int dione_ir_i2c_write32(struct i2c_client *client, u32 reg, u32 val)
 
 static inline int tc358746_sleep_mode(struct regmap *regmap, int enable)
 {
-	return regmap_update_bits(regmap, SYSCTL, SYSCTL_SLEEP_MASK,
-				  enable ? SYSCTL_SLEEP_MASK : 0);
+   int bit = enable ? SYSCTL_SLEEP_MASK : 0;
+	int err = regmap_update_bits(regmap, SYSCTL, SYSCTL_SLEEP_MASK,
+				  bit);
+    
+#ifdef DBG_TC358746
+   printk("tc358746 write bit @0x%02x : mask 0x%lX, value = 0x%X\n", SYSCTL, SYSCTL_SLEEP_MASK, bit);
+#endif
+
+	return err;
 }
 
 static inline int tc358746_sreset(struct regmap *regmap)
@@ -411,11 +420,19 @@ static inline int tc358746_sreset(struct regmap *regmap)
 	int err;
 
 	err = regmap_write(regmap, SYSCTL, SYSCTL_SRESET_MASK);
+#ifdef DBG_TC358746
+   printk("tc358746 write @0x%X = 0x%lX\n", SYSCTL, SYSCTL_SRESET_MASK);
+#endif
 
 	udelay(10);
 
 	if (!err)
+   {
 		err = regmap_write(regmap, SYSCTL, 0);
+#ifdef DBG_TC358746
+      printk("tc358746 write @0x%X = 0x%X\n", SYSCTL, 0);
+#endif
+    }
 
 	return err;
 }
@@ -448,16 +465,29 @@ static int tc358746_set_pll(struct regmap *regmap,
 				  PLLCTL1_RESETB_MASK | PLLCTL1_PLL_EN_MASK;
 
 		err = regmap_write(regmap, PLLCTL0, pllctl0_new);
+#ifdef DBG_TC358746
+      printk("tc358746 write @0x%X = 0x%X\n", PLLCTL0, pllctl0_new);
+#endif
 		if (!err)
+       {
 			err = regmap_update_bits(regmap, PLLCTL1,
 						 pllctl1_mask, pllctl1_val);
+#ifdef DBG_TC358746
+         printk("tc358746 write bit @0x%X : mask 0x%X, value = 0x%X\n", PLLCTL1, pllctl1_mask, pllctl1_val);
+#endif
+       }
 
 		udelay(1000);
 
 		if (!err)
+       {
 			err = regmap_update_bits(regmap, PLLCTL1,
 						 PLLCTL1_CKEN_MASK,
 						 PLLCTL1_CKEN_MASK);
+#ifdef DBG_TC358746
+         printk("tc358746 write bit @0x%X : mask 0x%lX, value = 0x%lX\n", PLLCTL1, PLLCTL1_CKEN_MASK, PLLCTL1_CKEN_MASK);
+#endif
+       }
 	}
 
 	return err;
@@ -471,11 +501,19 @@ static int tc358746_set_csi_color_space(struct regmap *regmap,
 	err = regmap_update_bits(regmap, DATAFMT,
 				 (DATAFMT_PDFMT_MASK | DATAFMT_UDT_EN_MASK),
 				 DATAFMT_PDFMT_SET(format->pdformat));
+#ifdef DBG_TC358746
+         printk("tc358746 write bit @0x%X : mask 0x%lX, value = 0x%lX\n", DATAFMT, (DATAFMT_PDFMT_MASK | DATAFMT_UDT_EN_MASK), DATAFMT_PDFMT_SET(format->pdformat));
+#endif
 
 	if (!err)
+   {
 		err = regmap_update_bits(regmap, CONFCTL, CONFCTL_PDATAF_MASK,
 					 CONFCTL_PDATAF_SET(format->pdataf));
-
+#ifdef DBG_TC358746
+      printk("tc358746 write bit @0x%X : mask 0x%lX, value = 0x%lX\n", CONFCTL, CONFCTL_PDATAF_MASK, CONFCTL_PDATAF_SET(format->pdataf));
+#endif
+   }
+   
 	return err;
 }
 
@@ -486,9 +524,17 @@ static int tc358746_set_buffers(struct regmap *regmap,
 	int err;
 
 	err = regmap_write(regmap, FIFOCTL, vb_fifo);
+#ifdef DBG_TC358746
+   printk("tc358746 write @0x%X = 0x%X\n", FIFOCTL, vb_fifo);
+#endif
 
 	if (!err)
+    {
 		err = regmap_write(regmap, WORDCNT, byte_per_line);
+#ifdef DBG_TC358746
+      printk("tc358746 write @0x%X = 0x%X\n", WORDCNT, byte_per_line);
+#endif
+    }
 
 	return err;
 }
@@ -505,11 +551,17 @@ static int tc358746_enable_csi_lanes(struct regmap *regmap,
       {
          dione_ir_regmap_format_32_ble((void *)&bleVal, CLW_CNTRL_CLW_LANEDISABLE_MASK);
 			err = regmap_write(regmap, CLW_CNTRL, bleVal);
+#ifdef DBG_TC358746
+         printk("tc358746 write @0x%X = 0x%lX\n", CLW_CNTRL, CLW_CNTRL_CLW_LANEDISABLE_MASK);
+#endif
       }
 		if (!err)
       {
          dione_ir_regmap_format_32_ble((void *)&bleVal, D0W_CNTRL_D0W_LANEDISABLE_MASK);
 			err = regmap_write(regmap, D0W_CNTRL, bleVal);
+#ifdef DBG_TC358746
+         printk("tc358746 write @0x%X = 0x%lX\n", D0W_CNTRL, D0W_CNTRL_D0W_LANEDISABLE_MASK);
+#endif
       }
 	}
 
@@ -518,6 +570,9 @@ static int tc358746_enable_csi_lanes(struct regmap *regmap,
       {
          dione_ir_regmap_format_32_ble((void *)&bleVal, D1W_CNTRL_D1W_LANEDISABLE_MASK);
 			err = regmap_write(regmap, D1W_CNTRL, bleVal);
+#ifdef DBG_TC358746
+         printk("tc358746 write @0x%X = 0x%lX\n", D1W_CNTRL, D1W_CNTRL_D1W_LANEDISABLE_MASK);
+#endif
       }
 	}
 
@@ -526,6 +581,9 @@ static int tc358746_enable_csi_lanes(struct regmap *regmap,
       {
          dione_ir_regmap_format_32_ble((void *)&bleVal, D2W_CNTRL_D2W_LANEDISABLE_MASK);
 			err = regmap_write(regmap, D2W_CNTRL, bleVal);
+#ifdef DBG_TC358746
+         printk("tc358746 write @0x%X = 0x%lX\n", D2W_CNTRL, D2W_CNTRL_D2W_LANEDISABLE_MASK);
+#endif
       }
 	}
 
@@ -534,6 +592,9 @@ static int tc358746_enable_csi_lanes(struct regmap *regmap,
       {
          dione_ir_regmap_format_32_ble((void *)&bleVal, D2W_CNTRL_D3W_LANEDISABLE_MASK);
 			err = regmap_write(regmap, D3W_CNTRL, bleVal);
+#ifdef DBG_TC358746
+         printk("tc358746 write @0x%X = 0x%lX\n", D3W_CNTRL, D2W_CNTRL_D3W_LANEDISABLE_MASK);
+#endif
       }
 	}
 
@@ -555,6 +616,9 @@ static int tc358746_enable_csi_lanes(struct regmap *regmap,
    {
       dione_ir_regmap_format_32_ble((void *)&bleVal, val);
 		err = regmap_write(regmap, HSTXVREGEN, bleVal);
+#ifdef DBG_TC358746
+      printk("tc358746 write @0x%X = 0x%X\n", HSTXVREGEN, val);
+#endif
    }
 
 	return err;
@@ -570,6 +634,9 @@ static int tc358746_set_csi(struct regmap *regmap,
 	      TCLK_HEADERCNT_TCLK_PREPARECNT_SET(csi->tclk_preparecnt);
    dione_ir_regmap_format_32_ble((void *)&bleVal, val);
 	err = regmap_write(regmap, TCLK_HEADERCNT, bleVal);
+#ifdef DBG_TC358746
+   printk("tc358746 write @0x%X = 0x%X\n", TCLK_HEADERCNT, val);
+#endif
 
 	val = THS_HEADERCNT_THS_ZEROCNT_SET(csi->ths_zerocnt) |
 	      THS_HEADERCNT_THS_PREPARECNT_SET(csi->ths_preparecnt);
@@ -577,48 +644,72 @@ static int tc358746_set_csi(struct regmap *regmap,
    {
       dione_ir_regmap_format_32_ble((void *)&bleVal, val);
 		err = regmap_write(regmap, THS_HEADERCNT, bleVal);
+#ifdef DBG_TC358746
+      printk("tc358746 write @0x%X = 0x%X\n", THS_HEADERCNT, val);
+#endif
    }
 
 	if (!err)
    {
       dione_ir_regmap_format_32_ble((void *)&bleVal, csi->twakeupcnt);
 		err = regmap_write(regmap, TWAKEUP, bleVal);
+#ifdef DBG_TC358746
+      printk("tc358746 write @0x%X = 0x%X\n", TWAKEUP, csi->twakeupcnt);
+#endif
    }
 
 	if (!err)
    {
       dione_ir_regmap_format_32_ble((void *)&bleVal, csi->tclk_postcnt);
 		err = regmap_write(regmap, TCLK_POSTCNT, bleVal);
+#ifdef DBG_TC358746
+      printk("tc358746 write @0x%X = 0x%X\n", TCLK_POSTCNT, csi->tclk_postcnt);
+#endif
    }
 
 	if (!err)
    {
       dione_ir_regmap_format_32_ble((void *)&bleVal, csi->ths_trailcnt);
 		err = regmap_write(regmap, THS_TRAILCNT, bleVal);
+#ifdef DBG_TC358746
+      printk("tc358746 write @0x%X = 0x%X\n", THS_TRAILCNT, csi->ths_trailcnt);
+#endif
    }
 
 	if (!err)
    {
       dione_ir_regmap_format_32_ble((void *)&bleVal, csi->lineinitcnt);
 		err = regmap_write(regmap, LINEINITCNT, bleVal);
+#ifdef DBG_TC358746
+      printk("tc358746 write @0x%X = 0x%X\n", LINEINITCNT, csi->lineinitcnt);
+#endif
    }
 
 	if (!err)
    {
       dione_ir_regmap_format_32_ble((void *)&bleVal, csi->lptxtimecnt);
 		err = regmap_write(regmap, LPTXTIMECNT, bleVal);
+#ifdef DBG_TC358746
+      printk("tc358746 write @0x%X = 0x%X\n", LPTXTIMECNT, csi->lptxtimecnt);
+#endif
    }
 
 	if (!err)
    {
       dione_ir_regmap_format_32_ble((void *)&bleVal, csi->tclk_trailcnt);
 		err = regmap_write(regmap, TCLK_TRAILCNT, bleVal);
+#ifdef DBG_TC358746
+      printk("tc358746 write @0x%X = 0x%X\n", TCLK_TRAILCNT, csi->tclk_trailcnt);
+#endif
    }
 
 	if (!err)
    {
       dione_ir_regmap_format_32_ble((void *)&bleVal, CSI_HSTXVREGCNT);
 		err = regmap_write(regmap, HSTXVREGCNT, bleVal);
+#ifdef DBG_TC358746
+      printk("tc358746 write @0x%X = 0x%X\n", HSTXVREGCNT, CSI_HSTXVREGCNT);
+#endif
    }
 
 	val = csi->is_continuous_clk ? TXOPTIONCNTRL_CONTCLKMODE_MASK : 0;
@@ -626,6 +717,9 @@ static int tc358746_set_csi(struct regmap *regmap,
    {
       dione_ir_regmap_format_32_ble((void *)&bleVal, val);
 		err = regmap_write(regmap, TXOPTIONCNTRL, bleVal);
+#ifdef DBG_TC358746
+      printk("tc358746 write @0x%X = 0x%X\n", TXOPTIONCNTRL, val);
+#endif
    }
 
 	return err;
@@ -634,11 +728,16 @@ static int tc358746_set_csi(struct regmap *regmap,
 static int tc358746_wr_csi_control(struct regmap *regmap, u32 val)
 {
 	u32 bleVal;
+	int err;
 	val &= CSI_CONFW_DATA_MASK;
 	val |= CSI_CONFW_MODE_SET_MASK | CSI_CONFW_ADDRESS_CSI_CONTROL_MASK;
    dione_ir_regmap_format_32_ble((void *)&bleVal, val);
 
-	return regmap_write(regmap, CSI_CONFW, bleVal);
+   err = regmap_write(regmap, CSI_CONFW, bleVal);
+#ifdef DBG_TC358746
+   printk("tc358746 write @0x%X = 0x%X\n", CSI_CONFW, val);
+#endif
+	return err;
 }
 
 static int tc358746_enable_csi_module(struct regmap *regmap, int lane_num)
@@ -648,11 +747,17 @@ static int tc358746_enable_csi_module(struct regmap *regmap, int lane_num)
 
    dione_ir_regmap_format_32_ble((void *)&bleVal, STARTCNTRL_START_MASK);
 	err = regmap_write(regmap, STARTCNTRL, bleVal);
+#ifdef DBG_TC358746
+   printk("tc358746 write @0x%X = 0x%lX\n", STARTCNTRL, STARTCNTRL_START_MASK);
+#endif
 
 	if (!err)
    {
       dione_ir_regmap_format_32_ble((void *)&bleVal, CSI_START_STRT_MASK);
 		err = regmap_write(regmap, CSI_START, bleVal);
+#ifdef DBG_TC358746
+      printk("tc358746 write @0x%X = 0x%lX\n", CSI_START, CSI_START_STRT_MASK);
+#endif
    }
 
 	val = CSI_CONTROL_NOL_1_MASK;
@@ -727,6 +832,9 @@ static int dione_ir_set_mode(struct dione_ir *priv)
 	}
 
 	regmap_write(ctl_regmap, DBG_ACT_LINE_CNT, 0);
+#ifdef DBG_TC358746
+   printk("tc358746 write @0x%X = 0x%X\n", DBG_ACT_LINE_CNT, 0);
+#endif
 
 	if (!err)
 		err = tc358746_sreset(ctl_regmap);
@@ -1292,9 +1400,17 @@ static int dione_ir_set_stream(struct v4l2_subdev *sd, int enable)
 		dione_ir_set_mode(priv);
 
       err = regmap_write(ctl_regmap, PP_MISC, 0);
+#ifdef DBG_TC358746
+      printk("tc358746 write @0x%X = 0x%X\n", PP_MISC, 0);
+#endif
       if (!err)
+      {
          err = regmap_update_bits(ctl_regmap, CONFCTL,
                    CONFCTL_PPEN_MASK, CONFCTL_PPEN_MASK);
+#ifdef DBG_TC358746
+         printk("tc358746 write bit @0x%X : mask 0x%lX, value = 0x%lX\n", CONFCTL, CONFCTL_PPEN_MASK, CONFCTL_PPEN_MASK);
+#endif
+      }
 
       if (err)
          dev_err(dev, "%s return code (%d)\n", __func__, err);
@@ -1307,23 +1423,42 @@ static int dione_ir_set_stream(struct v4l2_subdev *sd, int enable)
 
       err = regmap_update_bits(ctl_regmap, PP_MISC, PP_MISC_FRMSTOP_MASK,
                 PP_MISC_FRMSTOP_MASK);
+#ifdef DBG_TC358746
+      printk("tc358746 write bits @0x%X : mask 0x%lX, value = 0x%lX\n", PP_MISC, PP_MISC_FRMSTOP_MASK, PP_MISC_FRMSTOP_MASK);
+#endif
       if (!err)
+      {
          err = regmap_update_bits(ctl_regmap, CONFCTL,
                    CONFCTL_PPEN_MASK, 0);
+#ifdef DBG_TC358746
+         printk("tc358746 write bits @0x%X : mask 0x%lX, value = 0x%X\n", CONFCTL, CONFCTL_PPEN_MASK, 0);
+#endif
+      }
 
       if (!err)
+      {
          err = regmap_update_bits(ctl_regmap, PP_MISC,
                    PP_MISC_RSTPTR_MASK,
                    PP_MISC_RSTPTR_MASK);
+#ifdef DBG_TC358746
+         printk("tc358746 write bits @0x%X : mask 0x%lX, value = 0x%lX\n", PP_MISC, PP_MISC_RSTPTR_MASK, PP_MISC_RSTPTR_MASK);
+#endif
+      }
 
       if (!err)
       {
          dione_ir_regmap_format_32_ble((void *)&bleVal, CSIRESET_RESET_CNF_MASK | CSIRESET_RESET_MODULE_MASK);
          err = regmap_write(tx_regmap, CSIRESET, bleVal);
+#ifdef DBG_TC358746
+         printk("tc358746 write @0x%X = 0x%lX\n", CSIRESET, CSIRESET_RESET_CNF_MASK | CSIRESET_RESET_MODULE_MASK);
+#endif
       }
       if (!err)
       {
          err = regmap_write(ctl_regmap, DBG_ACT_LINE_CNT, 0);
+#ifdef DBG_TC358746
+         printk("tc358746 write @0x%X = 0x%X\n", DBG_ACT_LINE_CNT, 0);
+#endif
       }
 
       if (err)
