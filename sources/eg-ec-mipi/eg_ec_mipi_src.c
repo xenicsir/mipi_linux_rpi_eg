@@ -66,6 +66,7 @@ static const struct eg_ec_mode eg_ec_supported_modes[] = {
         },
 };
 
+static const s64 link_freq_menu_items[] = { 240000000 };
 
 struct eg_ec_i2c_client {
    struct i2c_client *i2c_client;
@@ -319,7 +320,7 @@ static inline int eg_ec_mipi_write_reg(struct i2c_client * i2c_client, uint16_t 
          if (i2c_clients[i].i2c_locked == 0)
          {
             i2c_clients[i].i2c_locked = 1;
-            __ecctrl_i2c_timeout_set(i2c_client, 0);
+            __ecctrl_i2c_timeout_set(i2c_client, 100);
             args.data_address = address;
             args.data = data;
             args.data_size = size;
@@ -351,7 +352,7 @@ static inline int eg_ec_mipi_read_reg(struct i2c_client * i2c_client, uint16_t a
          if (i2c_clients[i].i2c_locked == 0)
          {
             i2c_clients[i].i2c_locked = 1;
-            __ecctrl_i2c_timeout_set(i2c_client, 0);
+            __ecctrl_i2c_timeout_set(i2c_client, 100);
             args.data_address = address;
             args.data = data;
             args.data_size = size;
@@ -383,7 +384,7 @@ static inline int eg_ec_mipi_write_fifo(struct i2c_client * i2c_client, uint16_t
          if (i2c_clients[i].i2c_locked == 0)
          {
             i2c_clients[i].i2c_locked = 1;
-            __ecctrl_i2c_timeout_set(i2c_client, 0);
+            __ecctrl_i2c_timeout_set(i2c_client, 100);
             args.data_address = address;
             args.data = data;
             args.data_size = size;
@@ -417,7 +418,7 @@ static inline int eg_ec_mipi_read_fifo(struct i2c_client * i2c_client, uint16_t 
          if (i2c_clients[i].i2c_locked == 0)
          {
             i2c_clients[i].i2c_locked = 1;
-            __ecctrl_i2c_timeout_set(i2c_client, 0);
+            __ecctrl_i2c_timeout_set(i2c_client, 100);
             args.data_address = address;
             args.data = data;
             args.data_size = size;
@@ -681,9 +682,9 @@ static int eg_ec_get_selection(struct v4l2_subdev *sd,
    struct eg_ec *eg_ec = to_eg_ec(sd);
 
    switch (sel->target) {
-      case V4L2_SEL_TGT_CROP:
+//      case V4L2_SEL_TGT_CROP:
       case V4L2_SEL_TGT_NATIVE_SIZE:
-      case V4L2_SEL_TGT_CROP_DEFAULT:
+//      case V4L2_SEL_TGT_CROP_DEFAULT:
          sel->r.top = 0;
          sel->r.left = 0;
          sel->r.width = eg_ec->fmt.width;
@@ -765,6 +766,12 @@ static int eg_ec_init_controls(struct eg_ec *eg_ec)
          1, 1, 1, 1);
    if (ctrl)
       ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
+   ctrl = v4l2_ctrl_new_int_menu(ctrl_hdlr, &eg_ec_ctrl_ops, V4L2_CID_LINK_FREQ,
+                                0, 0, link_freq_menu_items);
+   if (ctrl)
+      ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
 
    if (ctrl_hdlr->error) {
       ret = ctrl_hdlr->error;
@@ -881,15 +888,15 @@ static int eg_ec_probe(struct i2c_client *client)
    eg_ec->fmt.height = eg_ec_supported_modes[0].height;
    eg_ec->fmt.code = eg_ec_mbus_codes[0];
    eg_ec->fmt.field = V4L2_FIELD_NONE;
-   eg_ec->fmt.colorspace = V4L2_COLORSPACE_RAW;
-   eg_ec->fmt.ycbcr_enc =
-      V4L2_MAP_YCBCR_ENC_DEFAULT(eg_ec->fmt.colorspace);
-   eg_ec->fmt.quantization =
-      V4L2_MAP_QUANTIZATION_DEFAULT(true,
-            eg_ec->fmt.colorspace,
-            eg_ec->fmt.ycbcr_enc);
-   eg_ec->fmt.xfer_func =
-      V4L2_MAP_XFER_FUNC_DEFAULT(eg_ec->fmt.colorspace);
+   eg_ec->fmt.colorspace = V4L2_COLORSPACE_SRGB;
+//   eg_ec->fmt.ycbcr_enc =
+//      V4L2_MAP_YCBCR_ENC_DEFAULT(eg_ec->fmt.colorspace);
+//   eg_ec->fmt.quantization =
+//      V4L2_MAP_QUANTIZATION_DEFAULT(true,
+//            eg_ec->fmt.colorspace,
+//            eg_ec->fmt.ycbcr_enc);
+//   eg_ec->fmt.xfer_func =
+//      V4L2_MAP_XFER_FUNC_DEFAULT(eg_ec->fmt.colorspace);
 
    ret = eg_ec_init_controls(eg_ec);
    if (ret)

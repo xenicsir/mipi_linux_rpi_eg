@@ -45,9 +45,7 @@
 				clocks = <&cam1_clk>;
 				clock-names = "xclk";
 
-				VANA-supply = <&cam1_reg>;	/* 2.8v */
-				VDIG-supply = <&cam_dummy_reg>;	/* 1.8v */
-				VDDL-supply = <&cam_dummy_reg>;	/* 1.2v */
+				VANA-supply = <&cam1_reg>;	/* Power enable pin */
 
 				rotation = <180>;
 				orientation = <2>;

@@ -59,6 +59,15 @@ u32 dione_ir_mbus_codes[] = {
 };
 #define NUM_MBUS_CODES ARRAY_SIZE(dione_ir_mbus_codes)
 
+/* regulator supplies */
+static const char * const dione_ir_supply_name[] = {
+	/* Supplies can be enabled in any order */
+	"VANA",  /* cam1_reg = Power enable pin, declared as active-low */
+	// "VDIG",  /* Digital Core (1.8V) supply */
+	// "VDDL",  /* IF (1.2V) supply */
+};
+#define DIONE_IR_NUM_SUPPLIES ARRAY_SIZE(dione_ir_supply_name)
+
 
 struct dione_ir_i2c_client {
    struct i2c_client *i2c_client;
@@ -108,6 +117,9 @@ struct dione_ir {
    u32 def_clk_freq;
 
    struct v4l2_ctrl *hblank;
+   
+   struct regulator_bulk_data supplies[DIONE_IR_NUM_SUPPLIES];   
+   
 };
 
 /* Mode : resolution and related config&values */
@@ -409,7 +421,7 @@ static inline int tc358746_sleep_mode(struct regmap *regmap, int enable)
 				  bit);
     
 #ifdef DBG_TC358746
-   printk("tc358746 write bit @0x%02x : mask 0x%lX, value = 0x%X\n", SYSCTL, SYSCTL_SLEEP_MASK, bit);
+   printk("tc358746 write bits @0x%02x : mask 0x%lX, value = 0x%X\n", SYSCTL, SYSCTL_SLEEP_MASK, bit);
 #endif
 
 	return err;
@@ -473,7 +485,7 @@ static int tc358746_set_pll(struct regmap *regmap,
 			err = regmap_update_bits(regmap, PLLCTL1,
 						 pllctl1_mask, pllctl1_val);
 #ifdef DBG_TC358746
-         printk("tc358746 write bit @0x%X : mask 0x%X, value = 0x%X\n", PLLCTL1, pllctl1_mask, pllctl1_val);
+         printk("tc358746 write bits @0x%X : mask 0x%X, value = 0x%X\n", PLLCTL1, pllctl1_mask, pllctl1_val);
 #endif
        }
 
@@ -485,7 +497,7 @@ static int tc358746_set_pll(struct regmap *regmap,
 						 PLLCTL1_CKEN_MASK,
 						 PLLCTL1_CKEN_MASK);
 #ifdef DBG_TC358746
-         printk("tc358746 write bit @0x%X : mask 0x%lX, value = 0x%lX\n", PLLCTL1, PLLCTL1_CKEN_MASK, PLLCTL1_CKEN_MASK);
+         printk("tc358746 write bits @0x%X : mask 0x%lX, value = 0x%lX\n", PLLCTL1, PLLCTL1_CKEN_MASK, PLLCTL1_CKEN_MASK);
 #endif
        }
 	}
@@ -502,7 +514,7 @@ static int tc358746_set_csi_color_space(struct regmap *regmap,
 				 (DATAFMT_PDFMT_MASK | DATAFMT_UDT_EN_MASK),
 				 DATAFMT_PDFMT_SET(format->pdformat));
 #ifdef DBG_TC358746
-         printk("tc358746 write bit @0x%X : mask 0x%lX, value = 0x%lX\n", DATAFMT, (DATAFMT_PDFMT_MASK | DATAFMT_UDT_EN_MASK), DATAFMT_PDFMT_SET(format->pdformat));
+         printk("tc358746 write bits @0x%X : mask 0x%lX, value = 0x%lX\n", DATAFMT, (DATAFMT_PDFMT_MASK | DATAFMT_UDT_EN_MASK), DATAFMT_PDFMT_SET(format->pdformat));
 #endif
 
 	if (!err)
@@ -510,7 +522,7 @@ static int tc358746_set_csi_color_space(struct regmap *regmap,
 		err = regmap_update_bits(regmap, CONFCTL, CONFCTL_PDATAF_MASK,
 					 CONFCTL_PDATAF_SET(format->pdataf));
 #ifdef DBG_TC358746
-      printk("tc358746 write bit @0x%X : mask 0x%lX, value = 0x%lX\n", CONFCTL, CONFCTL_PDATAF_MASK, CONFCTL_PDATAF_SET(format->pdataf));
+      printk("tc358746 write bits @0x%X : mask 0x%lX, value = 0x%lX\n", CONFCTL, CONFCTL_PDATAF_MASK, CONFCTL_PDATAF_SET(format->pdataf));
 #endif
    }
    
@@ -831,6 +843,45 @@ static int dione_ir_set_mode(struct dione_ir *priv)
 		}
 	}
 
+#ifdef DBG_TC358746
+   printk("tc358746_calculate input.mbus_fmt = 0x%x\n", input.mbus_fmt);
+   printk("tc358746_calculate input.refclk = %d\n", input.refclk);
+   printk("tc358746_calculate input.num_lanes = %d\n", input.num_lanes);
+   printk("tc358746_calculate input.discontinuous_clk = %d\n", input.discontinuous_clk);
+   printk("tc358746_calculate input.pclk = %d\n", input.pclk);
+   printk("tc358746_calculate input.width = %d\n", input.width);
+   printk("tc358746_calculate input.hblank = %d\n", input.hblank);
+   printk("tc358746_calculate params.format->code = %d\n", params.format->code);
+   printk("tc358746_calculate params.format->bus_width = %d\n", params.format->bus_width);
+   printk("tc358746_calculate params.format->bpp = %d\n", params.format->bpp);
+   printk("tc358746_calculate params.format->pdformat = %d\n", params.format->pdformat);
+   printk("tc358746_calculate params.format->pdataf = %d\n", params.format->pdataf);
+   printk("tc358746_calculate params.format->ppp = %d\n", params.format->ppp);
+   printk("tc358746_calculate params.format->csitx_only = %d\n", params.format->csitx_only);
+   printk("tc358746_calculate params.pll.pllinclk_hz = %d\n", params.pll.pllinclk_hz);
+   printk("tc358746_calculate params.pll.pll_prd = %d\n", params.pll.pll_prd);
+   printk("tc358746_calculate params.pll.pll_fbd = %d\n", params.pll.pll_fbd);
+   printk("tc358746_calculate params.csi.speed_range = %d\n", params.csi.speed_range);
+   printk("tc358746_calculate params.csi.unit_clk_hz = %d\n", params.csi.unit_clk_hz);
+   printk("tc358746_calculate params.csi.unit_clk_mul = %d\n", params.csi.unit_clk_mul);
+   printk("tc358746_calculate params.csi.speed_per_lane = %d\n", params.csi.speed_per_lane);
+   printk("tc358746_calculate params.csi.lane_num = %d\n", params.csi.lane_num);
+   printk("tc358746_calculate params.csi.is_continuous_clk = %d\n", params.csi.is_continuous_clk);
+   printk("tc358746_calculate params.csi.lineinitcnt = %d\n", params.csi.lineinitcnt);
+   printk("tc358746_calculate params.csi.lptxtimecnt = %d\n", params.csi.lptxtimecnt);
+   printk("tc358746_calculate params.csi.twakeupcnt = %d\n", params.csi.twakeupcnt);
+   printk("tc358746_calculate params.csi.tclk_preparecnt = %d\n", params.csi.tclk_preparecnt);
+   printk("tc358746_calculate params.csi.tclk_zerocnt = %d\n", params.csi.tclk_zerocnt);
+   printk("tc358746_calculate params.csi.tclk_trailcnt = %d\n", params.csi.tclk_trailcnt);
+   printk("tc358746_calculate params.csi.tclk_postcnt = %d\n", params.csi.tclk_postcnt);
+   printk("tc358746_calculate params.csi.ths_preparecnt = %d\n", params.csi.ths_preparecnt);
+   printk("tc358746_calculate params.csi.ths_zerocnt = %d\n", params.csi.ths_zerocnt);
+   printk("tc358746_calculate params.csi.ths_trailcnt = %d\n", params.csi.ths_trailcnt);
+   printk("tc358746_calculate params.csi.csi_hs_lp_hs_ps = %d\n", params.csi.csi_hs_lp_hs_ps);
+   printk("tc358746_calculate params.vb_fifo = %d\n", params.vb_fifo);
+#endif
+
+
 	regmap_write(ctl_regmap, DBG_ACT_LINE_CNT, 0);
 #ifdef DBG_TC358746
    printk("tc358746 write @0x%X = 0x%X\n", DBG_ACT_LINE_CNT, 0);
@@ -1142,10 +1193,34 @@ static int dione_ir_board_setup(struct dione_ir *priv)
 	_quick_mode = priv->quick_mode;
 	priv->quick_mode = 0;
 	priv->quick_mode = _quick_mode;
+	int ret;
 
 #ifdef DIONE_IR_STARTUP_TMO_MS
 	priv->start_up = ktime_get();
 #endif
+
+   // Power enable sequence start
+   // ---------------------------
+   // The power enable pin is declared as ACTIVE_HIGH in the regulator
+   // but for the Dione, it is active low. 
+   // So enable it to put 3.3V on the pin and power disable the Dione
+	ret = regulator_bulk_enable(DIONE_IR_NUM_SUPPLIES,
+				    priv->supplies);
+
+   usleep_range(10, 20);
+
+   // And disable the regulator to put 0V on the pin and power enable the Dione
+	ret = regulator_bulk_disable(DIONE_IR_NUM_SUPPLIES,
+				    priv->supplies);
+
+	if (ret) {
+		dev_err(dev, "%s: failed to enable regulators\n",
+			__func__);
+		return ret;
+	}
+   // Power enable sequence end
+   // -------------------------
+
 	// Probe sensor model id registers
 	err = regmap_read(ctl_regmap, CHIPID, &reg_val);
 	if (err)
@@ -1408,7 +1483,7 @@ static int dione_ir_set_stream(struct v4l2_subdev *sd, int enable)
          err = regmap_update_bits(ctl_regmap, CONFCTL,
                    CONFCTL_PPEN_MASK, CONFCTL_PPEN_MASK);
 #ifdef DBG_TC358746
-         printk("tc358746 write bit @0x%X : mask 0x%lX, value = 0x%lX\n", CONFCTL, CONFCTL_PPEN_MASK, CONFCTL_PPEN_MASK);
+         printk("tc358746 write bits @0x%X : mask 0x%lX, value = 0x%lX\n", CONFCTL, CONFCTL_PPEN_MASK, CONFCTL_PPEN_MASK);
 #endif
       }
 
@@ -1697,6 +1772,19 @@ static int dione_ir_parse_fpga_address(struct i2c_client *client,
 					  priv->fpga_address_num);
 }
 
+
+static int dione_ir_get_regulators(struct dione_ir *dione_ir, struct i2c_client *client)
+{
+	unsigned int i;
+
+	for (i = 0; i < DIONE_IR_NUM_SUPPLIES; i++)
+		dione_ir->supplies[i].supply = dione_ir_supply_name[i];
+
+	return devm_regulator_bulk_get(&client->dev,
+				       DIONE_IR_NUM_SUPPLIES,
+				       dione_ir->supplies);
+}
+
 static int dione_ir_probe(struct i2c_client *client)
 {
    struct device *dev = &client->dev;
@@ -1728,6 +1816,12 @@ static int dione_ir_probe(struct i2c_client *client)
    } else {
           dione_ir->def_clk_freq = clk_get_rate(dione_ir->clk);
    }
+
+   ret = dione_ir_get_regulators(dione_ir, client);
+	if (ret) {
+		dev_err(dev, "failed to get regulators\n");
+		return ret;
+	}
 
 	err = dione_ir_parse_fpga_address(client, dione_ir);
 	if (err < 0)
