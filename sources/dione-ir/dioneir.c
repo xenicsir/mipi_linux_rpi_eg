@@ -1199,17 +1199,12 @@ static int dione_ir_board_setup(struct dione_ir *priv)
 	priv->start_up = ktime_get();
 #endif
 
-   // Power enable sequence start
-   // ---------------------------
-   // The power enable pin is declared as ACTIVE_HIGH in the regulator
-   // but for the Dione, it is active low. 
-   // So enable it to put 3.3V on the pin and power disable the Dione
+   // Power enable sequence
 	ret = regulator_bulk_enable(DIONE_IR_NUM_SUPPLIES,
 				    priv->supplies);
 
    usleep_range(10, 20);
 
-   // And disable the regulator to put 0V on the pin and power enable the Dione
 	ret = regulator_bulk_disable(DIONE_IR_NUM_SUPPLIES,
 				    priv->supplies);
 
@@ -1218,8 +1213,6 @@ static int dione_ir_board_setup(struct dione_ir *priv)
 			__func__);
 		return ret;
 	}
-   // Power enable sequence end
-   // -------------------------
 
 	// Probe sensor model id registers
 	err = regmap_read(ctl_regmap, CHIPID, &reg_val);
