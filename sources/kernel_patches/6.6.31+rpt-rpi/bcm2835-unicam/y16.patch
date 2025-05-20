@@ -1,0 +1,20 @@
+--- a/bcm2835-unicam.c	2024-05-17 12:48:45.000000000 +0200
++++ b/bcm2835-unicam.c	2024-05-17 18:41:45.888236858 +0200
+@@ -459,11 +459,12 @@
+ 		.csi_dt		= MIPI_CSI2_DT_RAW14,
+ 		.valid_colorspaces = MASK_CS_RAW,
+ 	}, {
+-		.fourcc		= V4L2_PIX_FMT_Y16,
+-		.code		= MEDIA_BUS_FMT_Y16_1X16,
+-		.depth		= 16,
+-		.csi_dt		= MIPI_CSI2_DT_RAW16,
+-		.valid_colorspaces = MASK_CS_RAW,
++      .fourcc         = V4L2_PIX_FMT_Y16_BE,
++      .repacked_fourcc = V4L2_PIX_FMT_Y16_BE,
++      .code           = MEDIA_BUS_FMT_Y16_1X16,
++      .depth          = 16,
++      .csi_dt         = MIPI_CSI2_DT_RAW16,
++      .valid_colorspaces = MASK_CS_RAW,
+ 	},
+ 	/* Embedded data format */
+ 	{
