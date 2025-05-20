@@ -459,12 +459,11 @@ static const struct unicam_fmt formats[] = {
 		.csi_dt		= MIPI_CSI2_DT_RAW14,
 		.valid_colorspaces = MASK_CS_RAW,
 	}, {
-      .fourcc         = V4L2_PIX_FMT_Y16_BE,
-      .repacked_fourcc = V4L2_PIX_FMT_Y16_BE,
-      .code           = MEDIA_BUS_FMT_Y16_1X16,
-      .depth          = 16,
-      .csi_dt         = MIPI_CSI2_DT_RAW16,
-      .valid_colorspaces = MASK_CS_RAW,
+		.fourcc		= V4L2_PIX_FMT_Y16,
+		.code		= MEDIA_BUS_FMT_Y16_1X16,
+		.depth		= 16,
+		.csi_dt		= MIPI_CSI2_DT_RAW16,
+		.valid_colorspaces = MASK_CS_RAW,
 	},
 	/* Embedded data format */
 	{
