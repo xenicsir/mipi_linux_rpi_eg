@@ -19,7 +19,11 @@
 #include <media/v4l2-event.h>
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-mediabus.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,12,0)
 #include <asm/unaligned.h>
+#else
+#include <linux/unaligned.h>
+#endif
 #include <linux/of_graph.h>
 #include <linux/regmap.h>
 #include <linux/clk.h>
