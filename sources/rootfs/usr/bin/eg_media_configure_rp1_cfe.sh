@@ -1,6 +1,6 @@
 #!/bin/bash
 
-media=$(v4l2-ctl --list-devices | grep rp1-cfe -A 20 | grep -m1 /dev/media)
+media=$(v4l2-ctl --list-devices | egrep "rp1-cfe.*1f00128000" -A 20 | grep -m1 /dev/media)
 if [[ x$media != x ]]
 then
    echo media = $media
