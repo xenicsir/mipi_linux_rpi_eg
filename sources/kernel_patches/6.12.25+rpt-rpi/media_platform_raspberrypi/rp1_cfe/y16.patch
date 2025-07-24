@@ -1,0 +1,45 @@
+--- a/cfe_fmts.h	2025-07-24 15:02:22.533553440 +0200
++++ b/cfe_fmts.h	2025-07-24 15:03:31.844207107 +0200
+@@ -256,36 +256,36 @@
+ 		.code = MEDIA_BUS_FMT_Y8_1X8,
+ 		.depth = 8,
+ 		.csi_dt = MIPI_CSI2_DT_RAW8,
+-		.remap = { V4L2_PIX_FMT_Y16, V4L2_PIX_FMT_PISP_COMP1_MONO },
++		.remap = { V4L2_PIX_FMT_Y16_BE, V4L2_PIX_FMT_PISP_COMP1_MONO },
+ 	},
+ 	{
+ 		.fourcc = V4L2_PIX_FMT_Y10P,
+ 		.code = MEDIA_BUS_FMT_Y10_1X10,
+ 		.depth = 10,
+ 		.csi_dt = MIPI_CSI2_DT_RAW10,
+-		.remap = { V4L2_PIX_FMT_Y16, V4L2_PIX_FMT_PISP_COMP1_MONO },
++		.remap = { V4L2_PIX_FMT_Y16_BE, V4L2_PIX_FMT_PISP_COMP1_MONO },
+ 	},
+ 	{
+ 		.fourcc = V4L2_PIX_FMT_Y12P,
+ 		.code = MEDIA_BUS_FMT_Y12_1X12,
+ 		.depth = 12,
+ 		.csi_dt = MIPI_CSI2_DT_RAW12,
+-		.remap = { V4L2_PIX_FMT_Y16, V4L2_PIX_FMT_PISP_COMP1_MONO },
++		.remap = { V4L2_PIX_FMT_Y16_BE, V4L2_PIX_FMT_PISP_COMP1_MONO },
+ 	},
+ 	{
+ 		.fourcc = V4L2_PIX_FMT_Y14P,
+ 		.code = MEDIA_BUS_FMT_Y14_1X14,
+ 		.depth = 14,
+ 		.csi_dt = MIPI_CSI2_DT_RAW14,
+-		.remap = { V4L2_PIX_FMT_Y16, V4L2_PIX_FMT_PISP_COMP1_MONO },
++		.remap = { V4L2_PIX_FMT_Y16_BE, V4L2_PIX_FMT_PISP_COMP1_MONO },
+ 	},
+ 	{
+-		.fourcc = V4L2_PIX_FMT_Y16,
++		.fourcc = V4L2_PIX_FMT_Y16_BE,
+ 		.code = MEDIA_BUS_FMT_Y16_1X16,
+ 		.depth = 16,
+ 		.csi_dt = MIPI_CSI2_DT_RAW16,
+ 		.flags = CFE_FORMAT_FLAG_FE_OUT,
+-		.remap = { V4L2_PIX_FMT_Y16, V4L2_PIX_FMT_PISP_COMP1_MONO },
++		.remap = { V4L2_PIX_FMT_Y16_BE, V4L2_PIX_FMT_PISP_COMP1_MONO },
+ 	},
+ 	{
+ 		.fourcc = V4L2_PIX_FMT_PISP_COMP1_MONO,

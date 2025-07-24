@@ -1,0 +1,11 @@
+--- a/pisp_be_formats.h	2025-07-24 14:40:56.695691866 +0200
++++ b/pisp_be_formats.h	2025-07-24 14:41:51.083940469 +0200
+@@ -490,7 +490,7 @@
+ 		.colorspace_default = V4L2_COLORSPACE_RAW,
+ 	},
+ 	{
+-		.fourcc		= V4L2_PIX_FMT_Y16,
++		.fourcc		= V4L2_PIX_FMT_Y16_BE,
+ 		.bit_depth	= 16,
+ 		.align		= 32,
+ 		.plane_factor	= { P3(1.0) },
