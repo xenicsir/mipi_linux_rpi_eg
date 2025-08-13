@@ -848,6 +848,7 @@ static int dione_ir_set_mode(struct dione_ir *priv)
 	}
 
 #ifdef DBG_TC358746
+   printk("tc358746_calculate input.link_frequency = %lld\n", input.link_frequency);
    printk("tc358746_calculate input.mbus_fmt = 0x%x\n", input.mbus_fmt);
    printk("tc358746_calculate input.refclk = %d\n", input.refclk);
    printk("tc358746_calculate input.num_lanes = %d\n", input.num_lanes);
