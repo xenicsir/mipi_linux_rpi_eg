@@ -11,6 +11,7 @@ then
       fi
       sudo dtc -I dts -O dtb -o $OVERLAY_FOLDER/eg-ec-mipi.dtbo eg-ec-mipi.dts
       sudo dtc -I dts -O dtb -o $OVERLAY_FOLDER/dione-ir.dtbo dione-ir.dts
+      sudo dtc -I dts -O dtb -o $OVERLAY_FOLDER/microlynx-mipi.dtbo microlynx-mipi.dts
    fi
 else
    # On host
@@ -21,6 +22,7 @@ else
          mkdir -p $3/boot/overlays
          dtc -I dts -O dtb -o $3/boot/overlays/eg-ec-mipi.dtbo eg-ec-mipi.dts
          dtc -I dts -O dtb -o $3/boot/overlays/dione-ir.dtbo dione-ir.dts
+         dtc -I dts -O dtb -o $3/boot/overlays/microlynx-mipi.dtbo microlynx-mipi.dts
       fi
    fi
 fi

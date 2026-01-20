@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Definitions for Xenics Microlynx camera module on VC I2C bus
+/dts-v1/;
+/plugin/;
+
+/{
+	compatible = "brcm,bcm2835";
+
+	fragment@0 { //Physical controller from the broadcom chip
+		target = <&i2c0if>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@2 { //I2C mux because the physical interface is shared with other devices like DSI/CSI ports and VideoCore. Essentially a mux for the different I2C masters.
+		target = <&i2c0mux>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	i2c_frag: fragment@3 { //Virtual I2C interface for our camera
+		target = <&i2c_csi_dsi>;
+		__overlay__ {
+			#address-cells = <1>; //For child nodes
+			#size-cells = <0>; //size in bytes, 0 is no allocation
+			status = "okay";
+
+			xenics_microlynx: xenics_microlynx@51 {
+				compatible = "xenics,microlynx";
+				reg = <0x51>;
+				status = "okay";
+
+				rotation = <180>;
+				orientation = <2>;
+
+				line-height = <128>;
+
+				port {
+					microlynx_i2c_endpoint: endpoint {
+						remote-endpoint = <&microlynx_csi_endpoint>;
+						clock-lanes = <0>;
+						data-lanes = <1 2>;
+						link-frequencies = /bits/ 64 <450000000>; //450MHz D-PHY clock
+					};
+				};
+			};
+		};
+	};
+
+	__overrides__ {
+		line-height = <&xenics_microlynx>,"line-height:0";
+	};
+
+	csi_frag: fragment@4 {
+		target = <&csi1>;
+		csi: __overlay__ {
+			status = "okay";
+			brcm,media-controller;
+
+			port {
+				microlynx_csi_endpoint: endpoint {
+					remote-endpoint = <&microlynx_i2c_endpoint>;
+					clock-lanes = <0>;
+					data-lanes = <1 2>;
+					link-frequencies = /bits/ 64 <450000000>; //450MHz D-PHY clock
+					// default unit is <u32int>, but using /bits/ 64 says to ocmpiler to treat is as a u64int
+				};
+			};
+		};
+	};
+};
