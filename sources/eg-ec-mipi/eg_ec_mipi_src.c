@@ -474,11 +474,28 @@ static int eg_ec_set_ctrl(struct v4l2_ctrl *ctrl)
 {
    struct eg_ec *eg_ec =
       container_of(ctrl->handler, struct eg_ec, ctrl_handler);
-   int ret;
+   int ret = 0;
 
+   /*
+    * The EngineCore FPGA handles exposure and gain automatically.
+    * We accept these controls for libcamera compatibility but don't
+    * actually write to hardware registers.
+    */
    switch (ctrl->id) {
+      case V4L2_CID_ANALOGUE_GAIN:
+         /* Accept analogue gain control (required by libcamera) */
+         dev_dbg(&eg_ec->i2c_client->dev,
+               "Set analogue gain: %d\n", ctrl->val);
+         ret = 0;
+         break;
+      case V4L2_CID_EXPOSURE:
+         /* Accept exposure control (required by libcamera) */
+         dev_dbg(&eg_ec->i2c_client->dev,
+               "Set exposure: %d\n", ctrl->val);
+         ret = 0;
+         break;
       default:
-         dev_info(&eg_ec->i2c_client->dev,
+         dev_dbg(&eg_ec->i2c_client->dev,
                "ctrl(id:0x%x,val:0x%x) is not handled\n",
                ctrl->id, ctrl->val);
          ret = -EINVAL;
@@ -496,6 +513,7 @@ static int eg_ec_enum_mbus_code(struct v4l2_subdev *sd,
       struct v4l2_subdev_state *sd_state,
       struct v4l2_subdev_mbus_code_enum *code)
 {
+
    if (code->index >= NUM_MBUS_CODES)
       return -EINVAL;
    if (code->pad)
@@ -514,6 +532,7 @@ static int eg_ec_enum_frame_size(struct v4l2_subdev *sd,
    uint32_t detectorWidth = DEFAULT_WIDTH;
    uint32_t detectorHeight = DEFAULT_HEIGHT;
    struct eg_ec *eg_ec = to_eg_ec(sd);
+
    if (fse->index)
       return -EINVAL;
    if (fse->pad)
@@ -567,11 +586,10 @@ static int eg_ec_get_pad_format(struct v4l2_subdev *sd,
    if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
       struct v4l2_mbus_framefmt *try_fmt =
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0)
-         v4l2_subdev_get_try_format(&eg_ec->sd, sd_state,
+         v4l2_subdev_get_try_format(&eg_ec->sd, sd_state, fmt->pad);
 #else
-         v4l2_subdev_state_get_format(sd_state,
+         v4l2_subdev_state_get_format(sd_state, fmt->pad);
 #endif
-               fmt->pad);
       fmt->format = *try_fmt;
    }
    else
@@ -683,12 +701,11 @@ static int eg_ec_get_selection(struct v4l2_subdev *sd,
       struct v4l2_subdev_state *sd_state,
       struct v4l2_subdev_selection *sel)
 {
-   struct eg_ec *eg_ec = to_eg_ec(sd);
-
    switch (sel->target) {
-//      case V4L2_SEL_TGT_CROP:
+      case V4L2_SEL_TGT_CROP:
       case V4L2_SEL_TGT_NATIVE_SIZE:
-//      case V4L2_SEL_TGT_CROP_DEFAULT:
+      case V4L2_SEL_TGT_CROP_DEFAULT:
+      case V4L2_SEL_TGT_CROP_BOUNDS:
          sel->r.top = 0;
          sel->r.left = 0;
          sel->r.width = eg_ec->fmt.width;
@@ -706,6 +723,7 @@ static int eg_ec_set_stream(struct v4l2_subdev *sd, int enable)
     * Don't need to do anything here, just assume the source is streaming
     * already.
     */
+	
    return 0;
 }
 
@@ -744,7 +762,7 @@ static int eg_ec_init_controls(struct eg_ec *eg_ec)
    int ret;
 
    ctrl_hdlr = &eg_ec->ctrl_handler;
-   ret = v4l2_ctrl_handler_init(ctrl_hdlr, 4);
+   ret = v4l2_ctrl_handler_init(ctrl_hdlr, 6);
    if (ret)
       return ret;
 
@@ -755,7 +773,7 @@ static int eg_ec_init_controls(struct eg_ec *eg_ec)
    v4l2_ctrl_new_std(ctrl_hdlr, &eg_ec_ctrl_ops, V4L2_CID_PIXEL_RATE,
          1, 1, 1, 1);
 
-   /* Initial vblank/hblank/exposure parameters based on current mode */
+   /* Initial vblank/hblank parameters based on current mode */
    ctrl = v4l2_ctrl_new_std(ctrl_hdlr, &eg_ec_ctrl_ops, V4L2_CID_VBLANK,
          1, 1, 1, 1);
    if (ctrl)
@@ -766,10 +784,21 @@ static int eg_ec_init_controls(struct eg_ec *eg_ec)
    if (ctrl)
       ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-   ctrl = v4l2_ctrl_new_std(ctrl_hdlr, &eg_ec_ctrl_ops, V4L2_CID_EXPOSURE,
-         1, 1, 1, 1);
-   if (ctrl)
-      ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+   /*
+    * Exposure control - WRITABLE (required by libcamera)
+    * Range: 1 to 65535 lines (typical for sensors)
+    * Default: 1000 lines (~33ms at 30fps)
+    */
+   v4l2_ctrl_new_std(ctrl_hdlr, &eg_ec_ctrl_ops, V4L2_CID_EXPOSURE,
+         1, 65535, 1, 1000);
+
+   /*
+    * Analogue gain control - WRITABLE (required by libcamera)
+    * Range: 1x to 16x gain (typical range)
+    * Values in Q4 format: 16 = 1.0x, 256 = 16.0x
+    */
+   v4l2_ctrl_new_std(ctrl_hdlr, &eg_ec_ctrl_ops, V4L2_CID_ANALOGUE_GAIN,
+         16, 256, 1, 16);
 
    ctrl = v4l2_ctrl_new_int_menu(ctrl_hdlr, &eg_ec_ctrl_ops, V4L2_CID_LINK_FREQ,
                                 0, 0, link_freq_menu_items);
@@ -877,8 +906,9 @@ static int eg_ec_probe(struct i2c_client *client)
    v4l2_subdev_init(&eg_ec->sd, &eg_ec_subdev_ops);
    /* the owner is the same as the i2c_client's driver owner */
    eg_ec->sd.owner = dev->driver->owner;
-   eg_ec->sd.dev =dev;
+   eg_ec->sd.dev = dev;
    v4l2_set_subdevdata(&eg_ec->sd, client);
+   i2c_set_clientdata(client, &eg_ec->sd);
 
    /* initialize name */
    snprintf(eg_ec->sd.name, sizeof(eg_ec->sd.name), "%s",
@@ -888,19 +918,55 @@ static int eg_ec_probe(struct i2c_client *client)
    if (eg_ec_check_hwcfg(dev))
       return -EINVAL;
 
-   eg_ec->fmt.width = eg_ec_supported_modes[0].width;
-   eg_ec->fmt.height = eg_ec_supported_modes[0].height;
-   eg_ec->fmt.code = eg_ec_mbus_codes[0];
+   /* Read initial format from camera */
+   {
+      uint32_t predefinedFormat = EC_PREDEFINED_FORMAT_YCBCR;
+      uint32_t detectorWidth = DEFAULT_WIDTH;
+      uint32_t detectorHeight = DEFAULT_HEIGHT;
+      int err;
+
+      err = eg_ec_mipi_read_reg(client, EC_FEATURE_PREDIFINED_FORMAT, (uint8_t*)&predefinedFormat, sizeof(predefinedFormat));
+      if (err) {
+         predefinedFormat = EC_PREDEFINED_FORMAT_RGB;
+         dev_warn(dev, "Failed to read camera format, defaulting to RGB\n");
+      }
+
+      switch (predefinedFormat) {
+         case EC_PREDEFINED_FORMAT_YCBCR:
+            eg_ec->fmt.code = MEDIA_BUS_FMT_UYVY8_1X16;
+            break;
+         case EC_PREDEFINED_FORMAT_RGB:
+            eg_ec->fmt.code = MEDIA_BUS_FMT_RGB888_1X24;
+            break;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,1,63)
+         case EC_PREDEFINED_FORMAT_Y16:
+            eg_ec->fmt.code = MEDIA_BUS_FMT_Y16_1X16;
+            break;
+#endif
+         default:
+            eg_ec->fmt.code = MEDIA_BUS_FMT_RGB888_1X24;
+            break;
+      }
+
+      udelay(10000);
+      err = eg_ec_mipi_read_reg(client, EC_FEATURE_DETECTOR_WIDTH, (uint8_t*)&detectorWidth, sizeof(detectorWidth));
+      if (!err)
+         eg_ec->fmt.width = detectorWidth;
+      else
+         eg_ec->fmt.width = DEFAULT_WIDTH;
+
+      udelay(10000);
+      err = eg_ec_mipi_read_reg(client, EC_FEATURE_DETECTOR_HEIGHT, (uint8_t*)&detectorHeight, sizeof(detectorHeight));
+      if (!err)
+         eg_ec->fmt.height = detectorHeight;
+      else
+         eg_ec->fmt.height = DEFAULT_HEIGHT;
+
+      dev_info(dev, "Camera initial format: %dx%d code=0x%x\n",
+               eg_ec->fmt.width, eg_ec->fmt.height, eg_ec->fmt.code);
+   }
    eg_ec->fmt.field = V4L2_FIELD_NONE;
    eg_ec->fmt.colorspace = V4L2_COLORSPACE_SRGB;
-//   eg_ec->fmt.ycbcr_enc =
-//      V4L2_MAP_YCBCR_ENC_DEFAULT(eg_ec->fmt.colorspace);
-//   eg_ec->fmt.quantization =
-//      V4L2_MAP_QUANTIZATION_DEFAULT(true,
-//            eg_ec->fmt.colorspace,
-//            eg_ec->fmt.ycbcr_enc);
-//   eg_ec->fmt.xfer_func =
-//      V4L2_MAP_XFER_FUNC_DEFAULT(eg_ec->fmt.colorspace);
 
    ret = eg_ec_init_controls(eg_ec);
    if (ret)
@@ -953,35 +1019,46 @@ static int eg_ec_remove(struct i2c_client *client)
 static void eg_ec_remove(struct i2c_client *client)
 #endif
 {
-   struct v4l2_subdev *sd = i2c_get_clientdata(client);
-   struct device *dev = &client->dev;
-   struct eg_ec *eg_ec = to_eg_ec(sd);
-   int i;
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct device *dev = &client->dev;
+	struct eg_ec *eg_ec;
+	int i;
 
-   v4l2_async_unregister_subdev(&eg_ec->sd);
-   media_entity_cleanup(&eg_ec->sd.entity);
-   eg_ec_free_controls(eg_ec);
+	/* Check if subdev is valid before V4L2 cleanup */
+	if (!sd || IS_ERR(sd)) {
+		dev_warn(dev, "Subdev not initialized, skipping V4L2 cleanup\n");
+		goto cleanup_chnod;
+	}
 
-   for (i = 0; i < MAX_I2C_CLIENTS_NUMBER; i++)
-   {
-      if (i2c_clients[i].chnod_name[0] != 0)
-      {
-         if(i2c_clients[i].chnod_major_number != 0)
-         {
-            device_destroy(i2c_clients[i].pClass_chnod, i2c_clients[i].chnod_device_number);
-            class_destroy(i2c_clients[i].pClass_chnod);
-            unregister_chrdev(i2c_clients[i].chnod_major_number, i2c_clients[i].chnod_name);
-         }
-         dev_info(dev, "Removed %s device\n", i2c_clients[i].chnod_name);
-         i2c_clients[i].i2c_client = NULL;
-         i2c_clients[i].chnod_name[0] = 0;
-         break;
-      }
-   }
+	eg_ec = to_eg_ec(sd);
 
+	/* V4L2 cleanup in CORRECT order matching imx219 */
+	v4l2_async_unregister_subdev(&eg_ec->sd);
+	v4l2_subdev_cleanup(&eg_ec->sd);
+	media_entity_cleanup(&eg_ec->sd.entity);
+	eg_ec_free_controls(eg_ec);
+
+cleanup_chnod:
+	/* Application-level cleanup LAST */
+	for (i = 0; i < MAX_I2C_CLIENTS_NUMBER; i++)
+	{
+		if (i2c_clients[i].chnod_name[0] != 0)
+		{
+			if(i2c_clients[i].chnod_major_number != 0)
+			{
+				device_destroy(i2c_clients[i].pClass_chnod, i2c_clients[i].chnod_device_number);
+				class_destroy(i2c_clients[i].pClass_chnod);
+				unregister_chrdev(i2c_clients[i].chnod_major_number, i2c_clients[i].chnod_name);
+			}
+			dev_info(dev, "Removed %s device\n", i2c_clients[i].chnod_name);
+			i2c_clients[i].i2c_client = NULL;
+			i2c_clients[i].chnod_name[0] = 0;
+			break;
+		}
+	}
 
 #if LINUX_VERSION_CODE <= KERNEL_VERSION(6,1,1)
-   return 0;
+	return 0;
 #endif
 }
 
@@ -999,7 +1076,7 @@ static struct i2c_driver eg_ec_driver = {
 #endif
    .remove = eg_ec_remove,
    .driver = {
-      .name = "eg-ec-i2c",
+      .name = "eg-ec-mipi",
       .of_match_table	= eg_ec_dt_ids,
    },
 };

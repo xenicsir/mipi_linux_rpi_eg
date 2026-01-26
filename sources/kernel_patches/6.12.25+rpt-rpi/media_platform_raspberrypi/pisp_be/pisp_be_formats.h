@@ -490,7 +490,7 @@ static const struct pisp_be_format supported_formats[] = {
 		.colorspace_default = V4L2_COLORSPACE_RAW,
 	},
 	{
-		.fourcc		= V4L2_PIX_FMT_Y16,
+		.fourcc		= V4L2_PIX_FMT_Y16_BE,
 		.bit_depth	= 16,
 		.align		= 32,
 		.plane_factor	= { P3(1.0) },

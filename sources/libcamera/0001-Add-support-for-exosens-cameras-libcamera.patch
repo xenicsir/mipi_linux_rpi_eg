@@ -1,0 +1,843 @@
+diff --git a/src/ipa/rpi/cam_helper/cam_helper_dioneir.cpp b/src/ipa/rpi/cam_helper/cam_helper_dioneir.cpp
+new file mode 100644
+index 0000000..db72464
+--- /dev/null
++++ b/src/ipa/rpi/cam_helper/cam_helper_dioneir.cpp
+@@ -0,0 +1,141 @@
++/* SPDX-License-Identifier: BSD-2-Clause */
++/*
++ * Copyright (C) 2026, Exosens
++ *
++ * cam_helper_dioneir.cpp - Camera helper for Dione IR sensor
++ */
++
++#include <assert.h>
++#include <stddef.h>
++#include <stdio.h>
++#include <stdlib.h>
++
++#include "cam_helper.h"
++
++using namespace RPiController;
++
++/*
++ * CamHelper for Dione IR
++ *
++ * Sensor characteristics:
++ * - Resolutions: 640×480, 1280×1024, 1024×768, 320×240
++ * - Format: BGR888 (24-bit)
++ * - Interface: Parallel → MIPI CSI-2 (via TC358746 bridge)
++ * - Data lanes: 2
++ * - Link frequencies: 120 MHz, 497 MHz
++ * - Type: Thermal infrared sensor
++ */
++
++class CamHelperDioneir : public CamHelper
++{
++public:
++	CamHelperDioneir();
++	uint32_t gainCode(double gain) const override;
++	double gain(uint32_t gain_code) const override;
++	unsigned int hideFramesStartup() const override;
++	unsigned int hideFramesModeSwitch() const override;
++	unsigned int mistrustFramesStartup() const override;
++	unsigned int mistrustFramesModeSwitch() const override;
++
++private:
++	/*
++	 * Number of frames to hide at startup and during mode switches.
++	 * For this sensor: hide 2 frames at startup (bridge stabilization time)
++	 */
++	static constexpr uint32_t hideFramesStartup_ = 2;
++	static constexpr uint32_t hideFramesModeSwitch_ = 1;
++
++	/*
++	 * Number of frames with potentially incorrect data.
++	 * Used by AGC/AEC algorithms.
++	 */
++	static constexpr uint32_t mistrustFramesStartup_ = 2;
++	static constexpr uint32_t mistrustFramesModeSwitch_ = 1;
++};
++
++CamHelperDioneir::CamHelperDioneir()
++	: CamHelper({}, 1)
++{
++	/*
++	 * frameIntegrationDiff = 1 means exposure changes
++	 * are applied with a 1-frame delay.
++	 *
++	 * Note: This sensor uses a TC358746 bridge between the parallel
++	 * sensor and the MIPI CSI-2 interface. Timing may require adjustment.
++	 */
++}
++
++uint32_t CamHelperDioneir::gainCode(double gain) const
++{
++	/*
++	 * Dione IR: API gain → gain code conversion
++	 *
++	 * This thermal infrared sensor may have limited gain control
++	 * or gain managed by the internal FPGA.
++	 *
++	 * Q4 format: gain_code = gain * 16
++	 * - gain 1.0 → code 16
++	 * - gain 2.0 → code 32
++	 * - gain 8.0 → code 128
++	 */
++	return static_cast<uint32_t>(gain * 16.0);
++}
++
++double CamHelperDioneir::gain(uint32_t gain_code) const
++{
++	/*
++	 * Dione IR: gain code → API gain conversion
++	 */
++	return static_cast<double>(gain_code) / 16.0;
++}
++
++unsigned int CamHelperDioneir::hideFramesStartup() const
++{
++	/*
++	 * Number of frames to hide at startup.
++	 * During this time, AEC/AGC algorithms stabilize and
++	 * the TC358746 bridge initializes.
++	 */
++	return hideFramesStartup_;
++}
++
++unsigned int CamHelperDioneir::hideFramesModeSwitch() const
++{
++	/*
++	 * Number of frames to hide during mode switches
++	 * (e.g., 640×480 → 1280×1024)
++	 */
++	return hideFramesModeSwitch_;
++}
++
++unsigned int CamHelperDioneir::mistrustFramesStartup() const
++{
++	/*
++	 * Frames with potentially incorrect statistics at startup.
++	 */
++	return mistrustFramesStartup_;
++}
++
++unsigned int CamHelperDioneir::mistrustFramesModeSwitch() const
++{
++	/*
++	 * Frames with incorrect data after mode switch.
++	 */
++	return mistrustFramesModeSwitch_;
++}
++
++/*
++ * Register the CamHelper with libcamera.
++ * The name must match the sensor name in the device tree.
++ */
++static CamHelper *create()
++{
++	return new CamHelperDioneir();
++}
++
++/*
++ * Sensor recognition names.
++ * These names must match those returned by the V4L2 driver.
++ */
++static RegisterCamHelper reg("dioneir", &create);
++static RegisterCamHelper reg2("xenics_dione_ir", &create);
+diff --git a/src/ipa/rpi/cam_helper/cam_helper_eg_ec_mipi.cpp b/src/ipa/rpi/cam_helper/cam_helper_eg_ec_mipi.cpp
+new file mode 100644
+index 0000000..27b7ee1
+--- /dev/null
++++ b/src/ipa/rpi/cam_helper/cam_helper_eg_ec_mipi.cpp
+@@ -0,0 +1,142 @@
++/* SPDX-License-Identifier: BSD-2-Clause */
++/*
++ * Copyright (C) 2026, Exosens
++ *
++ * cam_helper_eg_ec_mipi.cpp - Camera helper for EngineCore MIPI sensor
++ */
++
++#include <assert.h>
++#include <stddef.h>
++#include <stdio.h>
++#include <stdlib.h>
++
++#include "cam_helper.h"
++
++using namespace RPiController;
++
++/*
++ * CamHelper for EngineCore MIPI (EG-EC-MIPI)
++ *
++ * Sensor characteristics:
++ * - Resolutions: 640×480, 1280×1024
++ * - Formats: UYVY8_1X16, RGB888_1X24, Y16_1X16
++ * - Interface: Native MIPI CSI-2
++ * - Data lanes: 1 or 2 (configurable)
++ * - Link frequency: 240 MHz
++ * - Type: Infrared/thermal sensor
++ * - Integrated EngineCore FPGA
++ */
++
++class CamHelperEgEcMipi : public CamHelper
++{
++public:
++	CamHelperEgEcMipi();
++	uint32_t gainCode(double gain) const override;
++	double gain(uint32_t gain_code) const override;
++	unsigned int hideFramesStartup() const override;
++	unsigned int hideFramesModeSwitch() const override;
++	unsigned int mistrustFramesStartup() const override;
++	unsigned int mistrustFramesModeSwitch() const override;
++
++private:
++	/*
++	 * Number of frames to hide at startup and during mode switches.
++	 * For this sensor: hide 3 frames at startup (FPGA initialization time)
++	 */
++	static constexpr uint32_t hideFramesStartup_ = 3;
++	static constexpr uint32_t hideFramesModeSwitch_ = 2;
++
++	/*
++	 * Number of frames with potentially incorrect data.
++	 * The EngineCore FPGA may require several frames to stabilize
++	 * image processing.
++	 */
++	static constexpr uint32_t mistrustFramesStartup_ = 3;
++	static constexpr uint32_t mistrustFramesModeSwitch_ = 2;
++};
++
++CamHelperEgEcMipi::CamHelperEgEcMipi()
++	: CamHelper({}, 1)
++{
++	/*
++	 * frameIntegrationDiff = 1 means exposure changes
++	 * are applied with a 1-frame delay.
++	 *
++	 * Note: This sensor integrates an EngineCore FPGA that handles
++	 * image processing and format conversion. Delay may require
++	 * adjustment depending on configuration.
++	 */
++}
++
++uint32_t CamHelperEgEcMipi::gainCode(double gain) const
++{
++	/*
++	 * EG-EC-MIPI: API gain → gain code conversion
++	 *
++	 * The EngineCore FPGA can implement digital gain control.
++	 *
++	 * Q4 format: gain_code = gain * 16
++	 * - gain 1.0 → code 16
++	 * - gain 2.0 → code 32
++	 * - gain 8.0 → code 128
++	 */
++	return static_cast<uint32_t>(gain * 16.0);
++}
++
++double CamHelperEgEcMipi::gain(uint32_t gain_code) const
++{
++	/*
++	 * EG-EC-MIPI: gain code → API gain conversion
++	 */
++	return static_cast<double>(gain_code) / 16.0;
++}
++
++unsigned int CamHelperEgEcMipi::hideFramesStartup() const
++{
++	/*
++	 * Number of frames to hide at startup.
++	 * The EngineCore FPGA requires several frames to initialize
++	 * and stabilize image processing.
++	 */
++	return hideFramesStartup_;
++}
++
++unsigned int CamHelperEgEcMipi::hideFramesModeSwitch() const
++{
++	/*
++	 * Number of frames to hide during mode switches
++	 * (e.g., 640×480 → 1280×1024) or format changes (UYVY → RGB → Y16)
++	 */
++	return hideFramesModeSwitch_;
++}
++
++unsigned int CamHelperEgEcMipi::mistrustFramesStartup() const
++{
++	/*
++	 * Frames with potentially incorrect statistics at startup.
++	 */
++	return mistrustFramesStartup_;
++}
++
++unsigned int CamHelperEgEcMipi::mistrustFramesModeSwitch() const
++{
++	/*
++	 * Frames with incorrect data after mode switch.
++	 */
++	return mistrustFramesModeSwitch_;
++}
++
++/*
++ * Register the CamHelper with libcamera.
++ * The name must match the sensor name in the device tree.
++ */
++static CamHelper *create()
++{
++	return new CamHelperEgEcMipi();
++}
++
++/*
++ * Sensor recognition names.
++ * These names must match those returned by the V4L2 driver.
++ */
++static RegisterCamHelper reg("eg-ec-mipi", &create);
+diff --git a/src/ipa/rpi/cam_helper/meson.build b/src/ipa/rpi/cam_helper/meson.build
+index c1eac68..cacc116 100644
+--- a/src/ipa/rpi/cam_helper/meson.build
++++ b/src/ipa/rpi/cam_helper/meson.build
+@@ -2,6 +2,8 @@
+ 
+ rpi_ipa_cam_helper_sources = files([
+     'cam_helper.cpp',
++    'cam_helper_dioneir.cpp',
++    'cam_helper_eg_ec_mipi.cpp',
+     'cam_helper_ov5647.cpp',
+     'cam_helper_imx219.cpp',
+     'cam_helper_imx283.cpp',
+diff --git a/src/ipa/rpi/pisp/data/dioneir.json b/src/ipa/rpi/pisp/data/dioneir.json
+new file mode 100644
+index 0000000..368998b
+--- /dev/null
++++ b/src/ipa/rpi/pisp/data/dioneir.json
+@@ -0,0 +1,104 @@
++{
++    "version": 2.0,
++    "target": "bcm2835",
++    "comment": "Minimal tuning file for Dione IR - Thermal infrared BGR888 sensor",
++    "algorithms": [
++        {
++            "rpi.black_level":
++            {
++                "black_level": 0
++            }
++        },
++        {
++            "rpi.lux":
++            {
++                "reference_shutter_speed": 10000,
++                "reference_gain": 1.0,
++                "reference_aperture": 1.0,
++                "reference_lux": 500,
++                "reference_Y": 10000
++            }
++        },
++        {
++            "rpi.agc":
++            {
++                "metering_modes":
++                {
++                    "centre-weighted":
++                    {
++                        "weights": [ 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0 ]
++                    },
++                    "spot":
++                    {
++                        "weights": [ 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ]
++                    },
++                    "matrix":
++                    {
++                        "weights": [ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 ]
++                    }
++                },
++                "exposure_modes":
++                {
++                    "normal":
++                    {
++                        "shutter": [ 100, 10000, 30000, 60000, 120000 ],
++                        "gain": [ 1.0, 2.0, 4.0, 6.0, 8.0 ]
++                    }
++                },
++                "constraint_modes":
++                {
++                    "normal": [
++                        {
++                            "bound": "LOWER",
++                            "q_lo": 0.98,
++                            "q_hi": 1.0,
++                            "y_target": [ 0, 0.4, 1000, 0.4 ]
++                        }
++                    ]
++                },
++                "y_target": [ 0, 0.4, 1000, 0.4 ],
++                "speed": 0.2,
++                "startup_frames": 5,
++                "convergence_frames": 6,
++                "default_exposure_time": 10000,
++                "default_analogue_gain": 1.0
++            }
++        },
++        {
++            "rpi.awb":
++            {
++                "bayes": 0
++            }
++        },
++        {
++            "rpi.contrast":
++            {
++                "ce_enable": 1,
++                "gamma_curve":
++                [
++                    0, 0,
++                    16384, 16384,
++                    32768, 32768,
++                    49152, 49152,
++                    65535, 65535
++                ]
++            }
++        },
++        {
++            "rpi.ccm":
++            {
++                "ccms": [
++                    {
++                        "ct": 5000,
++                        "ccm":
++                        [
++                            1.0, 0.0, 0.0,
++                            0.0, 1.0, 0.0,
++                            0.0, 0.0, 1.0
++                        ]
++                    }
++                ]
++            }
++        }
++    ]
++}
+diff --git a/src/ipa/rpi/pisp/data/eg-ec-mipi.json b/src/ipa/rpi/pisp/data/eg-ec-mipi.json
+new file mode 100644
+index 0000000..8c014ad
+--- /dev/null
++++ b/src/ipa/rpi/pisp/data/eg-ec-mipi.json
+@@ -0,0 +1,104 @@
++{
++    "version": 2.0,
++    "target": "bcm2835",
++    "comment": "Minimal tuning file for EngineCore MIPI - Infrared sensor with integrated FPGA - Formats: UYVY8, RGB888, Y16",
++    "algorithms": [
++        {
++            "rpi.black_level":
++            {
++                "black_level": 0
++            }
++        },
++        {
++            "rpi.lux":
++            {
++                "reference_shutter_speed": 10000,
++                "reference_gain": 1.0,
++                "reference_aperture": 1.0,
++                "reference_lux": 500,
++                "reference_Y": 10000
++            }
++        },
++        {
++            "rpi.agc":
++            {
++                "metering_modes":
++                {
++                    "centre-weighted":
++                    {
++                        "weights": [ 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0 ]
++                    },
++                    "spot":
++                    {
++                        "weights": [ 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ]
++                    },
++                    "matrix":
++                    {
++                        "weights": [ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 ]
++                    }
++                },
++                "exposure_modes":
++                {
++                    "normal":
++                    {
++                        "shutter": [ 100, 10000, 30000, 60000, 120000 ],
++                        "gain": [ 1.0, 2.0, 4.0, 6.0, 8.0 ]
++                    }
++                },
++                "constraint_modes":
++                {
++                    "normal": [
++                        {
++                            "bound": "LOWER",
++                            "q_lo": 0.98,
++                            "q_hi": 1.0,
++                            "y_target": [ 0, 0.4, 1000, 0.4 ]
++                        }
++                    ]
++                },
++                "y_target": [ 0, 0.4, 1000, 0.4 ],
++                "speed": 0.2,
++                "startup_frames": 6,
++                "convergence_frames": 6,
++                "default_exposure_time": 10000,
++                "default_analogue_gain": 1.0
++            }
++        },
++        {
++            "rpi.awb":
++            {
++                "bayes": 0
++            }
++        },
++        {
++            "rpi.contrast":
++            {
++                "ce_enable": 1,
++                "gamma_curve":
++                [
++                    0, 0,
++                    16384, 16384,
++                    32768, 32768,
++                    49152, 49152,
++                    65535, 65535
++                ]
++            }
++        },
++        {
++            "rpi.ccm":
++            {
++                "ccms": [
++                    {
++                        "ct": 5000,
++                        "ccm":
++                        [
++                            1.0, 0.0, 0.0,
++                            0.0, 1.0, 0.0,
++                            0.0, 0.0, 1.0
++                        ]
++                    }
++                ]
++            }
++        }
++    ]
++}
+diff --git a/src/ipa/rpi/pisp/data/meson.build b/src/ipa/rpi/pisp/data/meson.build
+index a33f077..cfe96a9 100644
+--- a/src/ipa/rpi/pisp/data/meson.build
++++ b/src/ipa/rpi/pisp/data/meson.build
+@@ -1,6 +1,8 @@
+ # SPDX-License-Identifier: CC0-1.0
+ 
+ conf_files = files([
++    'dioneir.json',
++    'eg-ec-mipi.json',
+     'imx219.json',
+     'imx219_noir.json',
+     'imx283.json',
+diff --git a/src/ipa/rpi/vc4/data/dioneir.json b/src/ipa/rpi/vc4/data/dioneir.json
+new file mode 100644
+index 0000000..368998b
+--- /dev/null
++++ b/src/ipa/rpi/vc4/data/dioneir.json
+@@ -0,0 +1,104 @@
++{
++    "version": 2.0,
++    "target": "bcm2835",
++    "comment": "Minimal tuning file for Dione IR - Thermal infrared BGR888 sensor",
++    "algorithms": [
++        {
++            "rpi.black_level":
++            {
++                "black_level": 0
++            }
++        },
++        {
++            "rpi.lux":
++            {
++                "reference_shutter_speed": 10000,
++                "reference_gain": 1.0,
++                "reference_aperture": 1.0,
++                "reference_lux": 500,
++                "reference_Y": 10000
++            }
++        },
++        {
++            "rpi.agc":
++            {
++                "metering_modes":
++                {
++                    "centre-weighted":
++                    {
++                        "weights": [ 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0 ]
++                    },
++                    "spot":
++                    {
++                        "weights": [ 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ]
++                    },
++                    "matrix":
++                    {
++                        "weights": [ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 ]
++                    }
++                },
++                "exposure_modes":
++                {
++                    "normal":
++                    {
++                        "shutter": [ 100, 10000, 30000, 60000, 120000 ],
++                        "gain": [ 1.0, 2.0, 4.0, 6.0, 8.0 ]
++                    }
++                },
++                "constraint_modes":
++                {
++                    "normal": [
++                        {
++                            "bound": "LOWER",
++                            "q_lo": 0.98,
++                            "q_hi": 1.0,
++                            "y_target": [ 0, 0.4, 1000, 0.4 ]
++                        }
++                    ]
++                },
++                "y_target": [ 0, 0.4, 1000, 0.4 ],
++                "speed": 0.2,
++                "startup_frames": 5,
++                "convergence_frames": 6,
++                "default_exposure_time": 10000,
++                "default_analogue_gain": 1.0
++            }
++        },
++        {
++            "rpi.awb":
++            {
++                "bayes": 0
++            }
++        },
++        {
++            "rpi.contrast":
++            {
++                "ce_enable": 1,
++                "gamma_curve":
++                [
++                    0, 0,
++                    16384, 16384,
++                    32768, 32768,
++                    49152, 49152,
++                    65535, 65535
++                ]
++            }
++        },
++        {
++            "rpi.ccm":
++            {
++                "ccms": [
++                    {
++                        "ct": 5000,
++                        "ccm":
++                        [
++                            1.0, 0.0, 0.0,
++                            0.0, 1.0, 0.0,
++                            0.0, 0.0, 1.0
++                        ]
++                    }
++                ]
++            }
++        }
++    ]
++}
+diff --git a/src/ipa/rpi/vc4/data/eg-ec-mipi.json b/src/ipa/rpi/vc4/data/eg-ec-mipi.json
+new file mode 100644
+index 0000000..8c014ad
+--- /dev/null
++++ b/src/ipa/rpi/vc4/data/eg-ec-mipi.json
+@@ -0,0 +1,104 @@
++{
++    "version": 2.0,
++    "target": "bcm2835",
++    "comment": "Minimal tuning file for EngineCore MIPI - Infrared sensor with integrated FPGA - Formats: UYVY8, RGB888, Y16",
++    "algorithms": [
++        {
++            "rpi.black_level":
++            {
++                "black_level": 0
++            }
++        },
++        {
++            "rpi.lux":
++            {
++                "reference_shutter_speed": 10000,
++                "reference_gain": 1.0,
++                "reference_aperture": 1.0,
++                "reference_lux": 500,
++                "reference_Y": 10000
++            }
++        },
++        {
++            "rpi.agc":
++            {
++                "metering_modes":
++                {
++                    "centre-weighted":
++                    {
++                        "weights": [ 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0 ]
++                    },
++                    "spot":
++                    {
++                        "weights": [ 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ]
++                    },
++                    "matrix":
++                    {
++                        "weights": [ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 ]
++                    }
++                },
++                "exposure_modes":
++                {
++                    "normal":
++                    {
++                        "shutter": [ 100, 10000, 30000, 60000, 120000 ],
++                        "gain": [ 1.0, 2.0, 4.0, 6.0, 8.0 ]
++                    }
++                },
++                "constraint_modes":
++                {
++                    "normal": [
++                        {
++                            "bound": "LOWER",
++                            "q_lo": 0.98,
++                            "q_hi": 1.0,
++                            "y_target": [ 0, 0.4, 1000, 0.4 ]
++                        }
++                    ]
++                },
++                "y_target": [ 0, 0.4, 1000, 0.4 ],
++                "speed": 0.2,
++                "startup_frames": 6,
++                "convergence_frames": 6,
++                "default_exposure_time": 10000,
++                "default_analogue_gain": 1.0
++            }
++        },
++        {
++            "rpi.awb":
++            {
++                "bayes": 0
++            }
++        },
++        {
++            "rpi.contrast":
++            {
++                "ce_enable": 1,
++                "gamma_curve":
++                [
++                    0, 0,
++                    16384, 16384,
++                    32768, 32768,
++                    49152, 49152,
++                    65535, 65535
++                ]
++            }
++        },
++        {
++            "rpi.ccm":
++            {
++                "ccms": [
++                    {
++                        "ct": 5000,
++                        "ccm":
++                        [
++                            1.0, 0.0, 0.0,
++                            0.0, 1.0, 0.0,
++                            0.0, 0.0, 1.0
++                        ]
++                    }
++                ]
++            }
++        }
++    ]
++}
+diff --git a/src/ipa/rpi/vc4/data/meson.build b/src/ipa/rpi/vc4/data/meson.build
+index 70deb35..5a96bdc 100644
+--- a/src/ipa/rpi/vc4/data/meson.build
++++ b/src/ipa/rpi/vc4/data/meson.build
+@@ -1,6 +1,8 @@
+ # SPDX-License-Identifier: CC0-1.0
+ 
+ conf_files = files([
++    'dioneir.json',
++    'eg-ec-mipi.json',
+     'imx219.json',
+     'imx219_noir.json',
+     'imx283.json',
+diff --git a/src/libcamera/formats.cpp b/src/libcamera/formats.cpp
+index bfcdfc0..1f896ca 100644
+--- a/src/libcamera/formats.cpp
++++ b/src/libcamera/formats.cpp
+@@ -549,7 +549,7 @@ const std::map<PixelFormat, PixelFormatInfo> pixelFormatInfo{
+ 	{ formats::R16, {
+ 		.name = "R16",
+ 		.format = formats::R16,
+-		.v4l2Formats = { V4L2PixelFormat(V4L2_PIX_FMT_Y16), },
++		.v4l2Formats = { V4L2PixelFormat(V4L2_PIX_FMT_Y16), V4L2PixelFormat(V4L2_PIX_FMT_Y16_BE), },
+ 		.bitsPerPixel = 16,
+ 		.colourEncoding = PixelFormatInfo::ColourEncodingYUV,
+ 		.packed = false,
+diff --git a/src/libcamera/pipeline/rpi/common/pipeline_base.cpp b/src/libcamera/pipeline/rpi/common/pipeline_base.cpp
+index 9d65dc8..b236c27 100644
+--- a/src/libcamera/pipeline/rpi/common/pipeline_base.cpp
++++ b/src/libcamera/pipeline/rpi/common/pipeline_base.cpp
+@@ -42,7 +42,8 @@ PixelFormat mbusCodeToPixelFormat(unsigned int code,
+ {
+ 	BayerFormat bayer = BayerFormat::fromMbusCode(code);
+ 
+-	ASSERT(bayer.isValid());
++	if (!bayer.isValid())
++		return PixelFormat();
+ 
+ 	bayer.packing = packingReq;
+ 	PixelFormat pix = bayer.toPixelFormat();
+diff --git a/src/libcamera/pipeline/simple/simple.cpp b/src/libcamera/pipeline/simple/simple.cpp
+index a06a529..f1eab30 100644
+--- a/src/libcamera/pipeline/simple/simple.cpp
++++ b/src/libcamera/pipeline/simple/simple.cpp
+@@ -260,6 +260,7 @@ static const SimplePipelineInfo supportedDevices[] = {
+ 	{ "j721e-csi2rx", {}, true },
+ 	{ "mtk-seninf", { { "mtk-mdp", 3 } }, false },
+ 	{ "mxc-isi", {}, false },
++	{ "unicam", {}, false },
+ 	{ "qcom-camss", {}, true },
+ 	{ "sun6i-csi", {}, false },
+ };
+diff --git a/src/libcamera/v4l2_pixelformat.cpp b/src/libcamera/v4l2_pixelformat.cpp
+index e8b3eb9..d46094c 100644
+--- a/src/libcamera/v4l2_pixelformat.cpp
++++ b/src/libcamera/v4l2_pixelformat.cpp
+@@ -143,6 +143,8 @@ const std::map<V4L2PixelFormat, V4L2PixelFormat::Info> vpf2pf{
+ 		{ formats::R12_CSI2P, "12-bit Greyscale Packed" } },
+ 	{ V4L2PixelFormat(V4L2_PIX_FMT_Y16),
+ 		{ formats::R16, "16-bit Greyscale" } },
++	{ V4L2PixelFormat(V4L2_PIX_FMT_Y16_BE),
++		{ formats::R16, "16-bit Greyscale BE" } },
+ 
+ 	/* Bayer formats. */
+ 	{ V4L2PixelFormat(V4L2_PIX_FMT_SBGGR8),
+diff --git a/src/libcamera/v4l2_videodevice.cpp b/src/libcamera/v4l2_videodevice.cpp
+index 25b61d0..f21dc85 100644
+--- a/src/libcamera/v4l2_videodevice.cpp
++++ b/src/libcamera/v4l2_videodevice.cpp
+@@ -1135,10 +1135,10 @@ V4L2VideoDevice::Formats V4L2VideoDevice::formats(uint32_t code)
+ 			return {};
+ 
+ 		if (formats.find(pixelFormat) != formats.end()) {
+-			LOG(V4L2, Error)
++			LOG(V4L2, Warning)
+ 				<< "Could not add sizes for pixel format "
+ 				<< pixelFormat;
+-			return {};
++			continue;
+ 		}
+ 
+ 		formats.emplace(pixelFormat, sizes);

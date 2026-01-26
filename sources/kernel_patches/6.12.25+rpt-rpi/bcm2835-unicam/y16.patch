@@ -1,12 +1,30 @@
---- a/bcm2835-unicam.c	2025-07-24 15:12:47.695725436 +0200
-+++ b/bcm2835-unicam.c	2025-07-24 15:14:03.473748523 +0200
-@@ -458,7 +458,8 @@
+diff --git a/bcm2835-unicam.c b/bcm2835-unicam.c
+index 1c4ae29..4111047 100644
+--- a/bcm2835-unicam.c
++++ b/bcm2835-unicam.c
+@@ -458,7 +458,7 @@ static const struct unicam_fmt formats[] = {
  		.csi_dt		= MIPI_CSI2_DT_RAW14,
  		.valid_colorspaces = MASK_CS_RAW,
  	}, {
 -		.fourcc		= V4L2_PIX_FMT_Y16,
 +		.fourcc		= V4L2_PIX_FMT_Y16_BE,
-+                .repacked_fourcc = V4L2_PIX_FMT_Y16_BE,
  		.code		= MEDIA_BUS_FMT_Y16_1X16,
  		.depth		= 16,
  		.csi_dt		= MIPI_CSI2_DT_RAW16,
+diff --git a/y16.patch b/y16.patch
+index be3054f..e69de29 100644
+--- a/y16.patch
++++ b/y16.patch
+@@ -1,12 +0,0 @@
+---- a/bcm2835-unicam.c	2025-07-24 15:12:47.695725436 +0200
+-+++ b/bcm2835-unicam.c	2025-07-24 15:14:03.473748523 +0200
+-@@ -458,7 +458,8 @@
+- 		.csi_dt		= MIPI_CSI2_DT_RAW14,
+- 		.valid_colorspaces = MASK_CS_RAW,
+- 	}, {
+--		.fourcc		= V4L2_PIX_FMT_Y16,
+-+		.fourcc		= V4L2_PIX_FMT_Y16_BE,
+-+                .repacked_fourcc = V4L2_PIX_FMT_Y16_BE,
+- 		.code		= MEDIA_BUS_FMT_Y16_1X16,
+- 		.depth		= 16,
+- 		.csi_dt		= MIPI_CSI2_DT_RAW16,

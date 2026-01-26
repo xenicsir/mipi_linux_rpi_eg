@@ -1,0 +1,153 @@
+diff --git a/core/rpicam_app.cpp b/core/rpicam_app.cpp
+index 0f0b5ff..c489fa4 100644
+--- a/core/rpicam_app.cpp
++++ b/core/rpicam_app.cpp
+@@ -642,54 +642,72 @@ void RPiCamApp::StartCamera()
+ 	// We don't overwrite anything the application may have set before calling us.
+ 	if (!controls_.get(controls::ScalerCrop) && !controls_.get(controls::rpi::ScalerCrops))
+ 	{
+-		const Rectangle sensor_area = camera_->controls().at(&controls::ScalerCrop).max().get<Rectangle>();
+-		const Rectangle default_crop = camera_->controls().at(&controls::ScalerCrop).def().get<Rectangle>();
+-		std::vector<Rectangle> crops;
+-
+-		if (options_->Get().roi_width != 0 && options_->Get().roi_height != 0)
+-		{
+-			int x = options_->Get().roi_x * sensor_area.width;
+-			int y = options_->Get().roi_y * sensor_area.height;
+-			unsigned int w = options_->Get().roi_width * sensor_area.width;
+-			unsigned int h = options_->Get().roi_height * sensor_area.height;
+-			crops.push_back({ x, y, w, h });
+-			crops.back().translateBy(sensor_area.topLeft());
+-		}
+-		else
++		// Check if ScalerCrop control is available (may not be present in simple pipeline)
++		auto scaler_iter = camera_->controls().find(&controls::ScalerCrop);
++		if (scaler_iter != camera_->controls().end())
+ 		{
+-			crops.push_back(default_crop);
+-		}
++			const Rectangle sensor_area = scaler_iter->second.max().get<Rectangle>();
++			const Rectangle default_crop = scaler_iter->second.def().get<Rectangle>();
++			std::vector<Rectangle> crops;
++
++			if (options_->Get().roi_width != 0 && options_->Get().roi_height != 0)
++			{
++				int x = options_->Get().roi_x * sensor_area.width;
++				int y = options_->Get().roi_y * sensor_area.height;
++				unsigned int w = options_->Get().roi_width * sensor_area.width;
++				unsigned int h = options_->Get().roi_height * sensor_area.height;
++				crops.push_back({ x, y, w, h });
++				crops.back().translateBy(sensor_area.topLeft());
++			}
++			else
++			{
++				crops.push_back(default_crop);
++			}
+ 
+-		LOG(2, "Using crop (main) " << crops.back().toString());
++			LOG(2, "Using crop (main) " << crops.back().toString());
+ 
+-		if (options_->Get().lores_width != 0 && options_->Get().lores_height != 0 && !options_->Get().lores_par)
+-		{
+-			crops.push_back(crops.back());
+-			LOG(2, "Using crop (lores) " << crops.back().toString());
+-		}
++			if (options_->Get().lores_width != 0 && options_->Get().lores_height != 0 && !options_->Get().lores_par)
++			{
++				crops.push_back(crops.back());
++				LOG(2, "Using crop (lores) " << crops.back().toString());
++			}
+ 
+-		if (options_->GetPlatform() == Platform::VC4)
+-			controls_.set(controls::ScalerCrop, crops[0]);
++			if (options_->GetPlatform() == Platform::VC4)
++				controls_.set(controls::ScalerCrop, crops[0]);
++			else
++				controls_.set(controls::rpi::ScalerCrops, libcamera::Span<const Rectangle>(crops.data(), crops.size()));
++		}
+ 		else
+-			controls_.set(controls::rpi::ScalerCrops, libcamera::Span<const Rectangle>(crops.data(), crops.size()));
++		{
++			LOG(2, "ScalerCrop control not available, skipping ROI setup");
++		}
+ 	}
+ 
+ 	if (!controls_.get(controls::AfWindows) && !controls_.get(controls::AfMetering) &&
+ 		options_->Get().afWindow_width != 0 && options_->Get().afWindow_height != 0)
+ 	{
+-		Rectangle sensor_area = camera_->controls().at(&controls::ScalerCrop).max().get<Rectangle>();
+-		int x = options_->Get().afWindow_x * sensor_area.width;
+-		int y = options_->Get().afWindow_y * sensor_area.height;
+-		int w = options_->Get().afWindow_width * sensor_area.width;
+-		int h = options_->Get().afWindow_height * sensor_area.height;
+-		Rectangle afwindows_rectangle[1];
+-		afwindows_rectangle[0] = Rectangle(x, y, w, h);
+-		afwindows_rectangle[0].translateBy(sensor_area.topLeft());
+-		LOG(2, "Using AfWindow " << afwindows_rectangle[0].toString());
+-		//activate the AfMeteringWindows
+-		controls_.set(controls::AfMetering, controls::AfMeteringWindows);
+-		//set window
+-		controls_.set(controls::AfWindows, afwindows_rectangle);
++		// Check if ScalerCrop control is available for AfWindow calculation
++		auto scaler_iter = camera_->controls().find(&controls::ScalerCrop);
++		if (scaler_iter != camera_->controls().end())
++		{
++			Rectangle sensor_area = scaler_iter->second.max().get<Rectangle>();
++			int x = options_->Get().afWindow_x * sensor_area.width;
++			int y = options_->Get().afWindow_y * sensor_area.height;
++			int w = options_->Get().afWindow_width * sensor_area.width;
++			int h = options_->Get().afWindow_height * sensor_area.height;
++			Rectangle afwindows_rectangle[1];
++			afwindows_rectangle[0] = Rectangle(x, y, w, h);
++			afwindows_rectangle[0].translateBy(sensor_area.topLeft());
++			LOG(2, "Using AfWindow " << afwindows_rectangle[0].toString());
++			//activate the AfMeteringWindows
++			controls_.set(controls::AfMetering, controls::AfMeteringWindows);
++			//set window
++			controls_.set(controls::AfWindows, afwindows_rectangle);
++		}
++		else
++		{
++			LOG(2, "ScalerCrop control not available, skipping AfWindow setup");
++		}
+ 	}
+ 
+ 	// Framerate is a bit weird. If it was set programmatically, we go with that, but
+@@ -760,7 +778,14 @@ void RPiCamApp::StartCamera()
+ 				options_->Get().af_on_capture)
+ 				afm = controls::AfModeManual;
+ 			else
+-				afm = camera_->controls().at(&controls::AfMode).max().get<int>();
++			{
++				// Check if AfMode control is available
++				auto afmode_iter = camera_->controls().find(&controls::AfMode);
++				if (afmode_iter != camera_->controls().end())
++					afm = afmode_iter->second.max().get<int>();
++				else
++					afm = controls::AfModeManual; // Fallback to manual if not available
++			}
+ 		}
+ 		controls_.set(controls::AfMode, afm);
+ 	}
+@@ -785,9 +810,20 @@ void RPiCamApp::StartCamera()
+ 		if (options_->Get().lens_position)
+ 			f = options_->Get().lens_position.value();
+ 		else
+-			f = camera_->controls().at(&controls::LensPosition).def().get<float>();
++		{
++			// Check if LensPosition control is available
++			auto lens_iter = camera_->controls().find(&controls::LensPosition);
++			if (lens_iter != camera_->controls().end())
++				f = lens_iter->second.def().get<float>();
++			else
++			{
++				LOG(2, "LensPosition control not available, skipping");
++				goto skip_lens_position;
++			}
++		}
+ 		LOG(2, "Setting LensPosition: " << f);
+ 		controls_.set(controls::LensPosition, f);
++		skip_lens_position:;
+ 	}
+ 
+ 	if (options_->Get().flicker_period && !controls_.get(controls::AeFlickerMode) &&
