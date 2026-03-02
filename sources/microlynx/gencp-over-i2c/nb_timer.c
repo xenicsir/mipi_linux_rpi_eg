@@ -34,14 +34,16 @@ static void _timer_callback (struct timer_list *t){
 #endif
 
 int nb_timers_init(int num_timers) {
+    int i;
+
     _timer_array_ptr = MEM_ALLOC(sizeof(struct timer_def) * num_timers);
     _timer_array_len = (size_t)num_timers;
 
     if (!_timer_array_ptr)
         return -1;
 
-    for(int i=0; i<num_timers; i++){
-        _timer_array_ptr->id = i;
+    for(i=0; i<num_timers; i++){
+        _timer_array_ptr[i].id = i;
         timer_setup(&_timer_array_ptr[i].timer, _timer_callback, 0);
     }
     return 0;
@@ -89,18 +91,25 @@ int nb_timer_delete(int timer_id) {
         return -1;
     } else {
         PRINT_DEBUG("Deleting timer id#%d\n", timer_id);
+        /* Do NOT memset: zeroing timer_list.function causes BUG_ON(!timer->function)
+         * in the next mod_timer() call. del_timer() is sufficient for kernel cleanup. */
         #ifdef __KERNEL__
         del_timer(&timer_ptr->timer);
+        timer_ptr->done = 1;
         #endif
-        memset(timer_ptr, 0, sizeof(struct timer_def)); // not really required
+        timer_ptr->active = 0;
         return 0;
     }
 }
 
 int nb_timer_delete_all (void) {
-    for (size_t i = 0; i < _timer_array_len;i++){
+    size_t i;
+
+    for (i = 0; i < _timer_array_len;i++){
         nb_timer_delete(i);
     }
     MEM_FREE(_timer_array_ptr);
+    _timer_array_ptr = NULL;
+    _timer_array_len = 0;
     return 0;
 }

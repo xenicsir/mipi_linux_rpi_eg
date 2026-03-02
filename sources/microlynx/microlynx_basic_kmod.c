@@ -6,6 +6,9 @@
 #include <linux/module.h>
 #include <linux/i2c.h>
 #include <linux/delay.h>
+#include <linux/miscdevice.h>
+#include <linux/mutex.h>
+#include <linux/uaccess.h>
 #include <media/v4l2-subdev.h>
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-mediabus.h>
@@ -18,6 +21,49 @@
 
 #define PREFIX "I2C test kmodule"
 #include "gencp-over-i2c/liblogger.h"
+
+/* ---- GenCP userspace chardev (/dev/microlynx-<bus>-<addr>) ------------- */
+
+/**
+ * struct microlynx_reg_op - ioctl payload for 32-bit register read/write
+ * @addr: GenCP register address
+ * @val:  value written (WRITE_REG) or value returned (READ_REG)
+ */
+struct microlynx_reg_op {
+	__u32 addr;
+	__u32 val;
+};
+
+#define MICROLYNX_STR_MAX 256
+
+/**
+ * struct microlynx_str_op - ioctl payload for GenCP string read
+ * @addr: GenCP register address of the string
+ * @len:  number of bytes to read (clamped to MICROLYNX_STR_MAX)
+ * @buf:  buffer filled with the string data on return
+ */
+struct microlynx_str_op {
+	__u32 addr;
+	__u32 len;
+	__u8  buf[MICROLYNX_STR_MAX];
+};
+
+#define MICROLYNX_IOCTL_MAGIC    'M'
+/* _IOWR('M', 1, struct microlynx_reg_op) */
+#define MICROLYNX_IOCTL_READ_REG  _IOWR(MICROLYNX_IOCTL_MAGIC, 1, \
+					struct microlynx_reg_op)
+/* _IOW('M', 2, struct microlynx_reg_op) */
+#define MICROLYNX_IOCTL_WRITE_REG _IOW(MICROLYNX_IOCTL_MAGIC,  2, \
+					struct microlynx_reg_op)
+/* _IOWR('M', 3, struct microlynx_str_op) */
+#define MICROLYNX_IOCTL_READ_STR  _IOWR(MICROLYNX_IOCTL_MAGIC, 3, \
+					struct microlynx_str_op)
+
+/*
+ * Module-level mutex: GENCPCLIENT uses process-global state (pRxBuffer,
+ * pTxBuffer, unio_handle_ptr).  Serialise all GenCP calls behind this lock.
+ */
+static DEFINE_MUTEX(microlynx_gencp_lock);
 
 // #define DEFAULT_WIDTH 1024
 // #define DEFAULT_HEIGHT 128
@@ -52,6 +98,10 @@ struct sensor_def {
    u32 line_height;
    u32 native_width;
    struct unio_handle io_handle;
+
+   /* GenCP chardev — /dev/microlynx-<bus>-<addr> */
+   struct miscdevice    miscdev;
+   char                 miscdev_name[32];
 };
 
 static const struct sensor_mode sensor_supported_modes[] = {
@@ -196,7 +246,7 @@ static int microlynx_sensor_check(struct sensor_def *sensor) {
 error_exit:
    dev_err(&sensor->i2c_client->dev, "Probing failed");
    GENCPCLIENT_Cleanup();
-   return EIO;
+   return -EIO;
 }
 
 static int microlynx_init_controls(struct sensor_def *sensor) {
@@ -315,7 +365,7 @@ static int sensor_get_pad_format(struct v4l2_subdev *sd,
    return 0;
 }
 
-static struct sensor_mode * sensor_find_mode(u32 width, u32 height)
+static const struct sensor_mode *sensor_find_mode(u32 width, u32 height)
 {
     int i;
     for (i = 0; i < NUM_SUPPORTED_MODES; i++) {
@@ -339,7 +389,7 @@ static int sensor_set_pad_format(
    if (fmt->pad)
       return -EINVAL;
 
-   struct sensor_mode *mode = sensor_find_mode(fmt->format.width, fmt->format.height);
+   const struct sensor_mode *mode = sensor_find_mode(fmt->format.width, fmt->format.height);
 
    if (!mode)
       return -EINVAL;
@@ -501,6 +551,87 @@ static const struct v4l2_subdev_internal_ops sensor_internal_ops = {
    .open = sensor_open,
 };
 
+/* ---- GenCP chardev file operations ------------------------------------ */
+
+static int microlynx_cdev_open(struct inode *inode, struct file *file)
+{
+	/*
+	 * The misc layer sets file->private_data to the struct miscdevice *.
+	 * Use container_of to reach the enclosing struct sensor_def.
+	 */
+	struct sensor_def *sensor =
+		container_of(file->private_data, struct sensor_def, miscdev);
+	file->private_data = sensor;
+	return 0;
+}
+
+static int microlynx_cdev_release(struct inode *inode, struct file *file)
+{
+	return 0;
+}
+
+static long microlynx_cdev_ioctl(struct file *file, unsigned int cmd,
+				  unsigned long arg)
+{
+	struct sensor_def *sensor __maybe_unused = file->private_data;
+	int ret = 0;
+
+	mutex_lock(&microlynx_gencp_lock);
+
+	switch (cmd) {
+	case MICROLYNX_IOCTL_READ_REG: {
+		struct microlynx_reg_op op;
+
+		if (copy_from_user(&op, (void __user *)arg, sizeof(op))) {
+			ret = -EFAULT;
+			break;
+		}
+		ret = GENCPCLIENT_ReadRegister(op.addr, &op.val);
+		if (ret == 0 && copy_to_user((void __user *)arg, &op, sizeof(op)))
+			ret = -EFAULT;
+		break;
+	}
+	case MICROLYNX_IOCTL_WRITE_REG: {
+		struct microlynx_reg_op op;
+
+		if (copy_from_user(&op, (void __user *)arg, sizeof(op))) {
+			ret = -EFAULT;
+			break;
+		}
+		ret = GENCPCLIENT_WriteRegister(op.addr, op.val);
+		break;
+	}
+	case MICROLYNX_IOCTL_READ_STR: {
+		struct microlynx_str_op op;
+
+		if (copy_from_user(&op, (void __user *)arg, sizeof(op))) {
+			ret = -EFAULT;
+			break;
+		}
+		op.len = min_t(u32, op.len, MICROLYNX_STR_MAX);
+		ret = GENCPCLIENT_ReadString(op.addr, op.buf, op.len);
+		if (ret == 0 && copy_to_user((void __user *)arg, &op, sizeof(op)))
+			ret = -EFAULT;
+		break;
+	}
+	default:
+		ret = -ENOTTY;
+		break;
+	}
+
+	mutex_unlock(&microlynx_gencp_lock);
+	return ret;
+}
+
+static const struct file_operations microlynx_cdev_fops = {
+	.owner          = THIS_MODULE,
+	.open           = microlynx_cdev_open,
+	.release        = microlynx_cdev_release,
+	.unlocked_ioctl = microlynx_cdev_ioctl,
+};
+
+/* ----------------------------------------------------------------------- */
+
 // Main probe function to detect hardware
 static int microlynx_probe(struct i2c_client *client)
 {
@@ -515,6 +646,8 @@ static int microlynx_probe(struct i2c_client *client)
    sensor = devm_kzalloc(&client->dev, sizeof(*sensor), GFP_KERNEL);
    if (!sensor)
       return -ENOMEM;
+
+   i2c_set_clientdata(client, sensor);
 
    /* Check the hardware configuration in device tree */
    if (microlynx_check_hwcfg(dev))
@@ -568,6 +701,19 @@ static int microlynx_probe(struct i2c_client *client)
       goto error_media_entity;
    }
 
+   /* Register GenCP chardev for userspace access */
+   snprintf(sensor->miscdev_name, sizeof(sensor->miscdev_name),
+         "microlynx-%d-%04x", client->adapter->nr, client->addr);
+   sensor->miscdev.minor  = MISC_DYNAMIC_MINOR;
+   sensor->miscdev.name   = sensor->miscdev_name;
+   sensor->miscdev.fops   = &microlynx_cdev_fops;
+   sensor->miscdev.parent = dev;
+   if (misc_register(&sensor->miscdev))
+      dev_warn(dev, "failed to register GenCP chardev; userspace access via microlynxCtrl.py will not work\n");
+   else
+      dev_info(dev, "GenCP chardev registered at /dev/%s\n",
+            sensor->miscdev_name);
+
    dev_info(&client->dev, "Minimal CSI sensor driver probed\n");
 
    dev_info(dev, "registered\n");
@@ -584,6 +730,9 @@ static int microlynx_probe(struct i2c_client *client)
 
 static void microlynx_remove(struct i2c_client *client)
 {
+    struct sensor_def *sensor = i2c_get_clientdata(client);
+
+    misc_deregister(&sensor->miscdev);
     GENCPCLIENT_Cleanup();
     dev_info(&client->dev, "Microlynx module removed\n");
 }
