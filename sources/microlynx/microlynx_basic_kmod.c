@@ -109,7 +109,7 @@ static const struct sensor_mode sensor_supported_modes[] = {
                .width = 1024,
                .height = 128, // NOTE: Value for testing
                .line_length = 1024, // NOTE: Should be no extra padding
-               .pix_clk_hz = 60000000, //60MHz
+               .pix_clk_hz = 112500000, // 112.5MHz : 450MHz (CSI clock) x 2 (DDR) x 2 (lanes) / 16 (bits/pixel)
         },
 };
 #define NUM_SUPPORTED_MODES ARRAY_SIZE(sensor_supported_modes)

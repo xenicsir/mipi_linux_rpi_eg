@@ -1,66 +1,188 @@
-## To grab video on target
+================================================================================
+EG CAMERA STREAMING EXAMPLES — RASPBERRY PI
+================================================================================
 
-Install gstreamer if needed (for Rpi OS) :
-<pre>
-sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-tools gstreamer1.0-x gstreamer1.0-alsa gstreamer1.0-gl gstreamer1.0-gtk3 gstreamer1.0-qt5 gstreamer1.0-pulseaudio
-</pre>
-Install v4l-utils if needed (for Ubuntu) :
-<pre>
-sudo apt-get install v4l-utils
-</pre>
+To check which cameras are associated to /dev/videoX devices:
+  eg_dt_camera_config_get.sh
 
-### EngineCore cameras
-- YCbCr 4:2:2
-<pre>
-v4l2-ctl -d /dev/video0 --stream-mmap --set-fmt-video=width=640,height=480,pixelformat="UYVY"
-gst-launch-1.0 -v v4l2src device=/dev/video0 ! "video/x-raw, format=(string)UYVY, width=640, height=480" ! videoconvert ! autovideosink sync=false
 
-v4l2-ctl -d /dev/video0 --stream-mmap --set-fmt-video=width=1280,height=1024,pixelformat="UYVY"
-gst-launch-1.0 -v v4l2src device=/dev/video0 ! "video/x-raw, format=(string)UYVY, width=1280, height=1024" ! videoconvert ! autovideosink sync=false
-</pre>
+================================================================================
+INSTALLATION
+================================================================================
 
-- RGB888
-<pre>
-v4l2-ctl -d /dev/video0 --stream-mmap --set-fmt-video=width=640,height=480,pixelformat="RGB3"
-gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)RGB, width=640, height=480" ! videoconvert ! autovideosink sync=false
+GStreamer (Raspberry Pi OS):
+  sudo apt-get install \
+    libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+    libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-tools \
+    gstreamer1.0-x gstreamer1.0-alsa gstreamer1.0-gl \
+    gstreamer1.0-gtk3 gstreamer1.0-qt5 gstreamer1.0-pulseaudio
 
-to a UDP port for gstreamer, host address 192.168.1.1 :
-	gst-launch-1.0 v4l2src device=/dev/video0 ! "video/x-raw, format=(string)RGB, width=640, height=480" ! videoconvert ! x264enc tune=zerolatency ! rtph264pay ! udpsink host=192.168.1.1 port=50000
-	Command for the receiver host : gst-launch-1.0 udpsrc port=50000 caps="application/x-rtp, media=video, encoding-name=H264" ! rtph264depay ! avdec_h264 ! autovideosink sync=false
-to a UDP port for VLC, host address 192.168.1.1 :
-	gst-launch-1.0 v4l2src device=/dev/video0 ! "video/x-raw, format=(string)RGB, width=640, height=480" ! videoconvert ! x264enc key-int-max=12 ! mpegtsmux ! udpsink host=192.168.1.1 port=50000
-to a TCP port for VLC: 
-	gst-launch-1.0 v4l2src device=/dev/video0 ! "video/x-raw, format=(string)RGB, width=640, height=480" ! videoconvert ! x264enc key-int-max=12 ! mpegtsmux ! tcpserversink host=0.0.0.0 port=50000
+v4l-utils:
+  sudo apt-get install v4l-utils
 
-v4l2-ctl -d /dev/video0 --stream-mmap --set-fmt-video=width=1280,height=1024,pixelformat="RGB3"
-gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)RGB, width=1280, height=1024" ! videoconvert ! autovideosink sync=false
-</pre>
 
-- Y16 : **not supported on Bullseye and Ubuntu 22.04.4**
-<pre>
-v4l2-ctl -d /dev/video0 --stream-mmap --set-fmt-video=width=640,height=480,pixelformat="Y16 -BE"
-gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)GRAY16_BE, width=640, height=480" ! videoconvert ! autovideosink sync=false
+================================================================================
+ENGINECORE CAMERAS
+================================================================================
 
-v4l2-ctl -d /dev/video0 --stream-mmap --set-fmt-video=width=1280,height=1024,pixelformat="Y16 -BE"
-gst-launch-1.0 -v v4l2src device="/dev/video0" ! "video/x-raw, format=(string)GRAY16_BE, width=1280, height=1024" ! videoconvert ! autovideosink sync=false
-</pre>
+UYVY (YCbCr 4:2:2)
+────────────────────
 
-### Dione cameras
+  640x480:
+    v4l2-ctl -d /dev/video0 --stream-mmap \
+      --set-fmt-video=width=640,height=480,pixelformat="UYVY"
+    gst-launch-1.0 -v v4l2src device=/dev/video0 \
+      ! "video/x-raw, format=(string)UYVY, width=640, height=480" \
+      ! videoconvert ! autovideosink sync=false
 
-- RGB888
-<pre>
-Bullseye
-v4l2-ctl -d /dev/video0 --stream-mmap --set-fmt-video=width=640,height=480,pixelformat="BGR3"
-gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=640,height=480 ! videoconvert ! ximagesink sync=false
+  1280x1024:
+    v4l2-ctl -d /dev/video0 --stream-mmap \
+      --set-fmt-video=width=1280,height=1024,pixelformat="UYVY"
+    gst-launch-1.0 -v v4l2src device=/dev/video0 \
+      ! "video/x-raw, format=(string)UYVY, width=1280, height=1024" \
+      ! videoconvert ! autovideosink sync=false
 
-v4l2-ctl -d /dev/video0 --stream-mmap --set-fmt-video=width=1280,height=1024,pixelformat="BGR3"
-gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=1280,height=1024 ! videoconvert ! ximagesink sync=false
 
-Bookworm, Ubuntu
-v4l2-ctl -d /dev/video0 --stream-mmap --set-fmt-video=width=640,height=480,pixelformat="BGR3"
-gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=640,height=480 ! videoconvert ! autovideosink sync=false
+RGB888
+──────
 
-v4l2-ctl -d /dev/video0 --stream-mmap --set-fmt-video=width=1280,height=1024,pixelformat="BGR3"
-gst-launch-1.0 v4l2src device=/dev/video0 ! video/x-raw,format=BGR,width=1280,height=1024 ! videoconvert ! autovideosink sync=false
-</pre>
+  640x480:
+    v4l2-ctl -d /dev/video0 --stream-mmap \
+      --set-fmt-video=width=640,height=480,pixelformat="RGB3"
+    gst-launch-1.0 -v v4l2src device=/dev/video0 \
+      ! "video/x-raw, format=(string)RGB, width=640, height=480" \
+      ! videoconvert ! autovideosink sync=false
 
+  1280x1024:
+    v4l2-ctl -d /dev/video0 --stream-mmap \
+      --set-fmt-video=width=1280,height=1024,pixelformat="RGB3"
+    gst-launch-1.0 -v v4l2src device=/dev/video0 \
+      ! "video/x-raw, format=(string)RGB, width=1280, height=1024" \
+      ! videoconvert ! autovideosink sync=false
+
+  Stream to UDP (GStreamer receiver, host 192.168.1.1):
+    gst-launch-1.0 v4l2src device=/dev/video0 \
+      ! "video/x-raw, format=(string)RGB, width=640, height=480" \
+      ! videoconvert ! x264enc tune=zerolatency ! rtph264pay \
+      ! udpsink host=192.168.1.1 port=50000
+
+    Receiver:
+      gst-launch-1.0 udpsrc port=50000 \
+        caps="application/x-rtp, media=video, encoding-name=H264" \
+        ! rtph264depay ! avdec_h264 ! autovideosink sync=false
+
+  Stream to UDP (VLC receiver, host 192.168.1.1):
+    gst-launch-1.0 v4l2src device=/dev/video0 \
+      ! "video/x-raw, format=(string)RGB, width=640, height=480" \
+      ! videoconvert ! x264enc key-int-max=12 ! mpegtsmux \
+      ! udpsink host=192.168.1.1 port=50000
+
+  Stream to TCP (VLC receiver):
+    gst-launch-1.0 v4l2src device=/dev/video0 \
+      ! "video/x-raw, format=(string)RGB, width=640, height=480" \
+      ! videoconvert ! x264enc key-int-max=12 ! mpegtsmux \
+      ! tcpserversink host=0.0.0.0 port=50000
+
+
+MONO16 — not supported on Bullseye and Ubuntu 22.04.4
+──────────────────────────────────────────────────────
+
+  640x480:
+    v4l2-ctl -d /dev/video0 --stream-mmap \
+      --set-fmt-video=width=640,height=480,pixelformat="Y16 -BE"
+    gst-launch-1.0 -v v4l2src device=/dev/video0 \
+      ! "video/x-raw, format=(string)GRAY16_BE, width=640, height=480" \
+      ! videoconvert ! autovideosink sync=false
+
+  1280x1024:
+    v4l2-ctl -d /dev/video0 --stream-mmap \
+      --set-fmt-video=width=1280,height=1024,pixelformat="Y16 -BE"
+    gst-launch-1.0 -v v4l2src device=/dev/video0 \
+      ! "video/x-raw, format=(string)GRAY16_BE, width=1280, height=1024" \
+      ! videoconvert ! autovideosink sync=false
+
+
+================================================================================
+DIONE CAMERAS
+================================================================================
+
+RGB888 (BGR)
+────────────
+
+  Bullseye:
+    640x480:
+      v4l2-ctl -d /dev/video0 --stream-mmap \
+        --set-fmt-video=width=640,height=480,pixelformat="BGR3"
+      gst-launch-1.0 v4l2src device=/dev/video0 \
+        ! video/x-raw,format=BGR,width=640,height=480 \
+        ! videoconvert ! ximagesink sync=false
+
+    1280x1024:
+      v4l2-ctl -d /dev/video0 --stream-mmap \
+        --set-fmt-video=width=1280,height=1024,pixelformat="BGR3"
+      gst-launch-1.0 v4l2src device=/dev/video0 \
+        ! video/x-raw,format=BGR,width=1280,height=1024 \
+        ! videoconvert ! ximagesink sync=false
+
+  Bookworm, Ubuntu:
+    640x480:
+      v4l2-ctl -d /dev/video0 --stream-mmap \
+        --set-fmt-video=width=640,height=480,pixelformat="BGR3"
+      gst-launch-1.0 v4l2src device=/dev/video0 \
+        ! video/x-raw,format=BGR,width=640,height=480 \
+        ! videoconvert ! autovideosink sync=false
+
+    1280x1024:
+      v4l2-ctl -d /dev/video0 --stream-mmap \
+        --set-fmt-video=width=1280,height=1024,pixelformat="BGR3"
+      gst-launch-1.0 v4l2src device=/dev/video0 \
+        ! video/x-raw,format=BGR,width=1280,height=1024 \
+        ! videoconvert ! autovideosink sync=false
+
+
+================================================================================
+MICROLYNX CAMERAS
+================================================================================
+
+MONO16 (Y16 - 16-bit Greyscale Little-Endian)
+──────────────────────────────────────────────
+Note: endianness is inverted vs Nvidia Jetson — GRAY16_LE on RPi, GRAY16_BE on Jetson.
+
+  1024x128 (full frame):
+    v4l2-ctl -d /dev/video0 --stream-mmap \
+      --set-fmt-video=width=1024,height=128,pixelformat="Y16 "
+    gst-launch-1.0 -v v4l2src device=/dev/video0 \
+      ! "video/x-raw, format=(string)GRAY16_LE, width=1024, height=128" \
+      ! videoconvert ! autovideosink sync=false
+
+  1024x1 (single line, first line):
+    gst-launch-1.0 -v v4l2src device=/dev/video0 \
+      ! "video/x-raw, format=(string)GRAY16_LE, width=1024, height=128" \
+      ! queue \
+      ! videocrop top=0 bottom=127 \
+      ! videoscale \
+      ! "video/x-raw, width=1024, height=100" \
+      ! videoconvert \
+      ! waylandsink sync=false
+
+
+================================================================================
+NOTES
+================================================================================
+
+• Y16 (16-bit greyscale) is not supported on Bullseye and Ubuntu 22.04.4.
+  Use RGB888 (RGB3) or UYVY instead.
+
+• Microlynx: the sensor transmits 128 lines over MIPI (hardware constraint).
+  Use videocrop to extract only the first line (actual 1D data).
+
+• Microlynx endianness: GRAY16_LE / "Y16 " on Raspberry Pi
+                        GRAY16_BE / "Y16 -BE" on Nvidia Jetson.
+
+• Line continuations (\) are for readability. Commands can be written on one
+  line by removing the backslash and newline.
+
+• DISPLAY=:0 (or :1) may be needed to set the X11 display for graphical
+  output in a remote session.
