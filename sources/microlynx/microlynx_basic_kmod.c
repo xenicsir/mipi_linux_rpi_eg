@@ -81,7 +81,6 @@ struct sensor_mode {
         u32 width; // Frame width in pixels
         u32 height; // Frame height in pixels
         u32 line_length; // Line length in pixels
-        u32 pix_clk_hz; // Pixel clock in Hz
 };
 
 struct sensor_def {
@@ -109,7 +108,6 @@ static const struct sensor_mode sensor_supported_modes[] = {
                .width = 1024,
                .height = 128, // NOTE: Value for testing
                .line_length = 1024, // NOTE: Should be no extra padding
-               .pix_clk_hz = 112500000, // 112.5MHz : 450MHz (CSI clock) x 2 (DDR) x 2 (lanes) / 16 (bits/pixel)
         },
 };
 #define NUM_SUPPORTED_MODES ARRAY_SIZE(sensor_supported_modes)
@@ -290,10 +288,6 @@ static int microlynx_init_controls(struct sensor_def *sensor) {
          1, 1, 1, 1);
    if (ctrl)
       ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
-
-   static const s64 link_freq_menu_items[] = { 240000000 };
-   ctrl = v4l2_ctrl_new_int_menu(ctrl_hdlr, &sensor_ctrl_ops, V4L2_CID_LINK_FREQ,
-                              0, 0, link_freq_menu_items); // NOTE: Unused but have to define it anyways?
 
    if (ctrl)
       ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;

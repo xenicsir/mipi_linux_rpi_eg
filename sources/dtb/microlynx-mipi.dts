@@ -42,7 +42,6 @@
 						remote-endpoint = <&microlynx_csi_endpoint>;
 						clock-lanes = <0>;
 						data-lanes = <1 2>;
-						link-frequencies = /bits/ 64 <450000000>; //450MHz D-PHY clock
 					};
 				};
 			};
@@ -64,8 +63,6 @@
 					remote-endpoint = <&microlynx_i2c_endpoint>;
 					clock-lanes = <0>;
 					data-lanes = <1 2>;
-					link-frequencies = /bits/ 64 <450000000>; //450MHz D-PHY clock
-					// default unit is <u32int>, but using /bits/ 64 says to ocmpiler to treat is as a u64int
 				};
 			};
 		};

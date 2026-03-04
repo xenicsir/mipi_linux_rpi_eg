@@ -1,6 +1,6 @@
 --- a/bcm2835-unicam.c
 +++ b/bcm2835-unicam.c
-@@ -463,6 +463,11 @@ static const struct unicam_fmt formats[] = {
+@@ -463,6 +463,12 @@ static const struct unicam_fmt formats[] = {
  		.depth		= 16,
  		.csi_dt		= MIPI_CSI2_DT_RAW16,
  		.valid_colorspaces = MASK_CS_RAW,
@@ -20,9 +20,9 @@
 -		fmt = find_format_by_code(source_fmt.format.code);
 +		fmt = find_format_by_pix(unicam, pix_fmt->pixelformat);
  
--		if (\!fmt || (fmt->fourcc \!= pix_fmt->pixelformat &&
--			     fmt->repacked_fourcc \!= pix_fmt->pixelformat))
-+		if (\!fmt || fmt->code \!= source_fmt.format.code)
+-		if (!fmt || (fmt->fourcc != pix_fmt->pixelformat &&
+-			     fmt->repacked_fourcc != pix_fmt->pixelformat))
++		if (!fmt || fmt->code != source_fmt.format.code)
  			return -EINVAL;
  	} else {
  		struct v4l2_meta_format *meta_fmt = &node->v_fmt.fmt.meta;

@@ -1,6 +1,6 @@
 --- a/bcm2835-unicam.c
 +++ b/bcm2835-unicam.c
-@@ -437,6 +437,19 @@ static const struct unicam_fmt formats[] = {
+@@ -437,6 +437,18 @@ static const struct unicam_fmt formats[] = {
  		.depth		= 14,
  		.csi_dt		= 0x2d,
  		.valid_colorspaces = MASK_CS_RAW,
@@ -19,16 +19,16 @@
  	},
  	/* Embedded data format */
  	{
-@@ -2119,10 +2132,9 @@ static int unicam_mc_video_link_validate(struct media_link *link)
+@@ -2119,10 +2131,9 @@ static int unicam_mc_video_link_validate(struct media_link *link)
  			return -EINVAL;
  		}
  
 -		fmt = find_format_by_code(source_fmt.format.code);
 +		fmt = find_format_by_pix(unicam, pix_fmt->pixelformat);
  
--		if (\!fmt || (fmt->fourcc \!= pix_fmt->pixelformat &&
--			     fmt->repacked_fourcc \!= pix_fmt->pixelformat))
-+		if (\!fmt || fmt->code \!= source_fmt.format.code)
+-		if (!fmt || (fmt->fourcc != pix_fmt->pixelformat &&
+-			     fmt->repacked_fourcc != pix_fmt->pixelformat))
++		if (!fmt || fmt->code != source_fmt.format.code)
  			return -EINVAL;
  	} else {
  		struct v4l2_meta_format *meta_fmt = &node->v_fmt.fmt.meta;
