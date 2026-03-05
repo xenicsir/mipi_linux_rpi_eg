@@ -1256,6 +1256,30 @@ done:
 }
 
 
+static int dione_ir_init_state(struct v4l2_subdev *sd,
+      struct v4l2_subdev_state *state)
+{
+   struct dione_ir *dione_ir = to_dione_ir(sd);
+   struct v4l2_mbus_framefmt *fmt;
+   struct v4l2_rect *crop;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0)
+   fmt  = v4l2_subdev_get_try_format(sd, state, 0);
+   crop = v4l2_subdev_get_try_crop(sd, state, 0);
+#else
+   fmt  = v4l2_subdev_state_get_format(state, 0);
+   crop = v4l2_subdev_state_get_crop(state, 0);
+#endif
+
+   *fmt = dione_ir->fmt;
+   crop->top    = 0;
+   crop->left   = 0;
+   crop->width  = dione_ir->fmt.width;
+   crop->height = dione_ir->fmt.height;
+
+   return 0;
+}
+
 static int dione_ir_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
    struct dione_ir *dione_ir = to_dione_ir(sd);
@@ -1344,6 +1368,30 @@ static int dione_ir_enum_frame_size(struct v4l2_subdev *sd,
    fse->max_height = fse->min_height;
 
    return 0;
+}
+
+static int dione_ir_enum_frame_interval(struct v4l2_subdev *sd,
+      struct v4l2_subdev_state *sd_state,
+      struct v4l2_subdev_frame_interval_enum *fie)
+{
+   int i;
+
+   if (fie->index > 0)
+      return -EINVAL;
+   if (fie->pad)
+      return -EINVAL;
+
+   for (i = 0; i < ARRAY_SIZE(dione_ir_supported_modes); i++) {
+      if (dione_ir_supported_modes[i].width  == fie->width &&
+          dione_ir_supported_modes[i].height == fie->height) {
+         fie->interval.numerator   = dione_ir_supported_modes[i].line_length *
+                                     dione_ir_supported_modes[i].height;
+         fie->interval.denominator = dione_ir_supported_modes[i].pix_clk_hz;
+         return 0;
+      }
+   }
+
+   return -EINVAL;
 }
 
 static int dione_ir_get_pad_format(struct v4l2_subdev *sd,
@@ -1551,11 +1599,12 @@ static const struct v4l2_subdev_video_ops dione_ir_video_ops = {
 };
 
 static const struct v4l2_subdev_pad_ops dione_ir_pad_ops = {
-   .enum_mbus_code = dione_ir_enum_mbus_code,
-   .get_fmt = dione_ir_get_pad_format,
-   .set_fmt = dione_ir_set_pad_format,
-   .get_selection = dione_ir_get_selection,
-   .enum_frame_size = dione_ir_enum_frame_size,
+   .enum_mbus_code      = dione_ir_enum_mbus_code,
+   .get_fmt             = dione_ir_get_pad_format,
+   .set_fmt             = dione_ir_set_pad_format,
+   .get_selection       = dione_ir_get_selection,
+   .enum_frame_size     = dione_ir_enum_frame_size,
+   .enum_frame_interval = dione_ir_enum_frame_interval,
 };
 
 static const struct v4l2_subdev_ops sensor_subdev_ops = {
@@ -1565,7 +1614,8 @@ static const struct v4l2_subdev_ops sensor_subdev_ops = {
 };
 
 static const struct v4l2_subdev_internal_ops dione_ir_internal_ops = {
-   .open = dione_ir_open,
+   .init_state = dione_ir_init_state,
+   .open       = dione_ir_open,
 };
 
 /* Initialize control handlers */
@@ -1880,15 +1930,24 @@ static int dione_ir_probe(struct i2c_client *client)
       goto error_handler_free;
    }
 
+   ret = v4l2_subdev_init_finalize(&dione_ir->sd);
+   if (ret) {
+      dev_err(dev, "failed to init subdev state: %d\n", ret);
+      goto error_media_entity;
+   }
+
    ret = v4l2_async_register_subdev_sensor(&dione_ir->sd);
    if (ret < 0) {
       dev_err(dev, "failed to register dione_ir sub-device: %d\n", ret);
-      goto error_media_entity;
+      goto error_subdev_cleanup;
    }
 
    dev_info(dev, "registered\n");
 
    return 0;
+
+error_subdev_cleanup:
+   v4l2_subdev_cleanup(&dione_ir->sd);
 
 error_media_entity:
    media_entity_cleanup(&dione_ir->sd.entity);
@@ -1916,6 +1975,7 @@ static void dione_ir_remove(struct i2c_client *client)
    int i;
 
    v4l2_async_unregister_subdev(&dione_ir->sd);
+   v4l2_subdev_cleanup(&dione_ir->sd);
    media_entity_cleanup(&dione_ir->sd.entity);
    dione_ir_free_controls(dione_ir);
 

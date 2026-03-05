@@ -9,6 +9,7 @@
 #include <linux/miscdevice.h>
 #include <linux/mutex.h>
 #include <linux/uaccess.h>
+#include <linux/version.h>
 #include <media/v4l2-subdev.h>
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-mediabus.h>
@@ -311,18 +312,52 @@ static int microlynx_init_controls(struct sensor_def *sensor) {
    return ret;
 };
 
+static int sensor_init_state(struct v4l2_subdev *sd,
+      struct v4l2_subdev_state *state)
+{
+   struct sensor_def *sensor = container_of(sd, struct sensor_def, sd);
+   struct v4l2_mbus_framefmt *fmt;
+   struct v4l2_rect *crop;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0)
+   fmt  = v4l2_subdev_get_try_format(sd, state, 0);
+   crop = v4l2_subdev_get_try_crop(sd, state, 0);
+#else
+   fmt  = v4l2_subdev_state_get_format(state, 0);
+   crop = v4l2_subdev_state_get_crop(state, 0);
+#endif
+
+   *fmt = sensor->fmt;
+   crop->top    = 0;
+   crop->left   = 0;
+   crop->width  = sensor->fmt.width;
+   crop->height = sensor->fmt.height;
+
+   return 0;
+}
+
 static int sensor_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
    // Grab the pointer to the main sensor_def from referencing the v4l2_subdev pointer
    struct sensor_def *sensor = container_of(sd, struct sensor_def, sd);
-   struct v4l2_mbus_framefmt *try_img_fmt = v4l2_subdev_state_get_format(fh->state, 0);
+   struct v4l2_mbus_framefmt *try_img_fmt;
    struct v4l2_rect *try_crop;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0)
+   try_img_fmt = v4l2_subdev_get_try_format(sd, fh->state, 0);
+#else
+   try_img_fmt = v4l2_subdev_state_get_format(fh->state, 0);
+#endif
 
    // Frame format we defined in the probe function
    *try_img_fmt = sensor->fmt;
 
    /* Initialize try_crop rectangle. */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0)
+   try_crop = v4l2_subdev_get_try_crop(sd, fh->state, 0);
+#else
    try_crop = v4l2_subdev_state_get_crop(fh->state, 0);
+#endif
    try_crop->top = 0;
    try_crop->left = 0;
    try_crop->width = try_img_fmt->width;
@@ -344,8 +379,12 @@ static int sensor_get_pad_format(struct v4l2_subdev *sd,
 
    // This tries to configure the setting without actually setting the camera?
    if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-      struct v4l2_mbus_framefmt *try_fmt =
-         v4l2_subdev_state_get_format(sd_state, fmt->pad);
+      struct v4l2_mbus_framefmt *try_fmt;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0)
+      try_fmt = v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
+#else
+      try_fmt = v4l2_subdev_state_get_format(sd_state, fmt->pad);
+#endif
       fmt->format = *try_fmt;
       // printk("DEBUG: Try: %d x %d, color: %d\n", fmt->format.width, fmt->format.height, fmt->format.colorspace);
    }
@@ -397,7 +436,11 @@ static int sensor_set_pad_format(
 
 
    if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0)
+      format = v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
+#else
       format = v4l2_subdev_state_get_format(sd_state, fmt->pad);
+#endif
    } else {
       format = &sensor->fmt;
    }
@@ -440,52 +483,43 @@ static int sensor_set_stream(struct v4l2_subdev *sd, int enable)
    return 0;
 }
 
-// static int sensor_enum_frame_size(struct v4l2_subdev *sd,
-//       struct v4l2_subdev_state *sd_state,
-//       struct v4l2_subdev_frame_size_enum *fse)
-// {
-//    uint32_t detectorWidth = DEFAULT_WIDTH;
-//    uint32_t detectorHeight = DEFAULT_HEIGHT;
-//    struct sensor_def *sensor = container_of(sd, struct sensor_def, sd);
-//
-//    dev_err(&sensor->i2c_client->dev, "Grabbing frame size enum\n");
-//
-//    if (fse->index)
-//       return -EINVAL;
-//    if (fse->pad)
-//       return -EINVAL;
-//
-//    if (fse->index >= NUM_SUPPORTED_MODES)
-//       return -EINVAL;
-//
-//    fse->min_width  = sensor_supported_modes[fse->index].width;
-//    fse->max_width  = sensor_supported_modes[fse->index].width;
-//    fse->min_height = sensor_supported_modes[fse->index].height;
-//    fse->max_height = sensor_supported_modes[fse->index].height;
-//
-//    // // FIX: Get the actual Width from the sensor here using I2C
-//    // // Override detectorWidth here
-//    // int err;
-//    // err = 0;
-//    // if (!err) {
-//    //    fse->min_width = detectorWidth;
-//    //    fse->max_width = detectorWidth;
-//    // } else {
-//    //    dev_err(&sensor->i2c_client->dev, "Failed to get detector's width.\n");
-//    // }
-//    //
-//    // // FIX: et the actual Height from the sensor here using I2C
-//    // // Override detectorHeight here
-//    // err = 0;
-//    // if (!err) {
-//    //    fse->min_height = detectorHeight;
-//    //    fse->max_height = detectorHeight;
-//    // } else {
-//    //    dev_err(&sensor->i2c_client->dev, "Failed to get detector's height.\n");
-//    // }
-//
-//    return 0;
-// }
+static int sensor_enum_frame_size(struct v4l2_subdev *sd,
+      struct v4l2_subdev_state *sd_state,
+      struct v4l2_subdev_frame_size_enum *fse)
+{
+   struct sensor_def *sensor = container_of(sd, struct sensor_def, sd);
+
+   if (fse->index >= NUM_SUPPORTED_MODES)
+      return -EINVAL;
+   if (fse->pad)
+      return -EINVAL;
+   if (fse->code != sensor_mbus_codes[0])
+      return -EINVAL;
+
+   fse->min_width  = sensor->native_width;
+   fse->max_width  = sensor->native_width;
+   fse->min_height = sensor->line_height;
+   fse->max_height = sensor->line_height;
+
+   return 0;
+}
+
+static int sensor_enum_frame_interval(struct v4l2_subdev *sd,
+      struct v4l2_subdev_state *sd_state,
+      struct v4l2_subdev_frame_interval_enum *fie)
+{
+   if (fie->index > 0)
+      return -EINVAL;
+   if (fie->pad)
+      return -EINVAL;
+   if (fie->code != sensor_mbus_codes[0])
+      return -EINVAL;
+
+   fie->interval.numerator   = 1;
+   fie->interval.denominator = 120;
+
+   return 0;
+}
 
 static int sensor_get_selection(struct v4l2_subdev *sd,
       struct v4l2_subdev_state *sd_state,
@@ -527,12 +561,12 @@ static const struct v4l2_subdev_video_ops sensor_video_ops = {
 };
 
 static const struct v4l2_subdev_pad_ops sensor_pad_ops = {
-   .enum_mbus_code = sensor_enum_mbus_code,
-   .get_fmt = sensor_get_pad_format,
-   .set_fmt = sensor_set_pad_format,
-   // NOTE: Below is not required for minimal driver
-   .get_selection = sensor_get_selection, // This is for ROIs?
-   // .enum_frame_size = sensor_enum_frame_size, //For multiple resolutions?
+   .enum_mbus_code      = sensor_enum_mbus_code,
+   .get_fmt             = sensor_get_pad_format,
+   .set_fmt             = sensor_set_pad_format,
+   .get_selection       = sensor_get_selection,
+   .enum_frame_size     = sensor_enum_frame_size,
+   .enum_frame_interval = sensor_enum_frame_interval,
 };
 
 static const struct v4l2_subdev_ops sensor_subdev_ops = {
@@ -542,7 +576,8 @@ static const struct v4l2_subdev_ops sensor_subdev_ops = {
 };
 
 static const struct v4l2_subdev_internal_ops sensor_internal_ops = {
-   .open = sensor_open,
+   .init_state = sensor_init_state,
+   .open       = sensor_open,
 };
 
 /* ---- GenCP chardev file operations ------------------------------------ */
@@ -689,10 +724,16 @@ static int microlynx_probe(struct i2c_client *client)
       goto error_handler_free;
    }
 
+   ret = v4l2_subdev_init_finalize(&sensor->sd);
+   if (ret) {
+      dev_err(dev, "failed to init subdev state: %d\n", ret);
+      goto error_media_entity;
+   }
+
    ret = v4l2_async_register_subdev_sensor(&sensor->sd);
    if (ret < 0) {
       dev_err(dev, "failed to register sensor sub-device: %d\n", ret);
-      goto error_media_entity;
+      goto error_subdev_cleanup;
    }
 
    /* Register GenCP chardev for userspace access */
@@ -713,6 +754,9 @@ static int microlynx_probe(struct i2c_client *client)
    dev_info(dev, "registered\n");
    return 0;
 
+   error_subdev_cleanup:
+      v4l2_subdev_cleanup(&sensor->sd);
+
    error_media_entity:
       media_entity_cleanup(&sensor->sd.entity);
 
@@ -727,6 +771,10 @@ static void microlynx_remove(struct i2c_client *client)
     struct sensor_def *sensor = i2c_get_clientdata(client);
 
     misc_deregister(&sensor->miscdev);
+    v4l2_async_unregister_subdev(&sensor->sd);
+    v4l2_subdev_cleanup(&sensor->sd);
+    media_entity_cleanup(&sensor->sd.entity);
+    sensor_free_controls(sensor);
     GENCPCLIENT_Cleanup();
     dev_info(&client->dev, "Microlynx module removed\n");
 }

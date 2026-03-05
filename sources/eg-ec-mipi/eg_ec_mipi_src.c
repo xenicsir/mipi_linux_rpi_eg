@@ -443,6 +443,30 @@ static inline int eg_ec_mipi_read_fifo(struct i2c_client * i2c_client, uint16_t 
    return -EINVAL;
 }
 
+static int eg_ec_init_state(struct v4l2_subdev *sd,
+      struct v4l2_subdev_state *state)
+{
+   struct eg_ec *eg_ec = to_eg_ec(sd);
+   struct v4l2_mbus_framefmt *fmt;
+   struct v4l2_rect *crop;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0)
+   fmt  = v4l2_subdev_get_try_format(sd, state, 0);
+   crop = v4l2_subdev_get_try_crop(sd, state, 0);
+#else
+   fmt  = v4l2_subdev_state_get_format(state, 0);
+   crop = v4l2_subdev_state_get_crop(state, 0);
+#endif
+
+   *fmt = eg_ec->fmt;
+   crop->top    = 0;
+   crop->left   = 0;
+   crop->width  = eg_ec->fmt.width;
+   crop->height = eg_ec->fmt.height;
+
+   return 0;
+}
+
 static int eg_ec_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
    struct eg_ec *eg_ec = to_eg_ec(sd);
@@ -549,6 +573,30 @@ static int eg_ec_enum_frame_size(struct v4l2_subdev *sd,
    }
 
    return 0;
+}
+
+static int eg_ec_enum_frame_interval(struct v4l2_subdev *sd,
+      struct v4l2_subdev_state *sd_state,
+      struct v4l2_subdev_frame_interval_enum *fie)
+{
+   int i;
+
+   if (fie->index > 0)
+      return -EINVAL;
+   if (fie->pad)
+      return -EINVAL;
+
+   for (i = 0; i < ARRAY_SIZE(eg_ec_supported_modes); i++) {
+      if (eg_ec_supported_modes[i].width  == fie->width &&
+          eg_ec_supported_modes[i].height == fie->height) {
+         /* Nominal 30 fps for all modes */
+         fie->interval.numerator   = 1;
+         fie->interval.denominator = 30;
+         return 0;
+      }
+   }
+
+   return -EINVAL;
 }
 
 static int eg_ec_get_pad_format(struct v4l2_subdev *sd,
@@ -719,11 +767,12 @@ static const struct v4l2_subdev_video_ops eg_ec_video_ops = {
 };
 
 static const struct v4l2_subdev_pad_ops eg_ec_pad_ops = {
-   .enum_mbus_code = eg_ec_enum_mbus_code,
-   .get_fmt = eg_ec_get_pad_format,
-   .set_fmt = eg_ec_set_pad_format,
-   .get_selection = eg_ec_get_selection,
-   .enum_frame_size = eg_ec_enum_frame_size,
+   .enum_mbus_code      = eg_ec_enum_mbus_code,
+   .get_fmt             = eg_ec_get_pad_format,
+   .set_fmt             = eg_ec_set_pad_format,
+   .get_selection       = eg_ec_get_selection,
+   .enum_frame_size     = eg_ec_enum_frame_size,
+   .enum_frame_interval = eg_ec_enum_frame_interval,
 };
 
 static const struct v4l2_subdev_ops eg_ec_subdev_ops = {
@@ -733,7 +782,8 @@ static const struct v4l2_subdev_ops eg_ec_subdev_ops = {
 };
 
 static const struct v4l2_subdev_internal_ops eg_ec_internal_ops = {
-   .open = eg_ec_open,
+   .init_state = eg_ec_init_state,
+   .open       = eg_ec_open,
 };
 
 /* Initialize control handlers */
@@ -922,15 +972,24 @@ static int eg_ec_probe(struct i2c_client *client)
       goto error_handler_free;
    }
 
+   ret = v4l2_subdev_init_finalize(&eg_ec->sd);
+   if (ret) {
+      dev_err(dev, "failed to init subdev state: %d\n", ret);
+      goto error_media_entity;
+   }
+
    ret = v4l2_async_register_subdev_sensor(&eg_ec->sd);
    if (ret < 0) {
       dev_err(dev, "failed to register eg_ec sub-device: %d\n", ret);
-      goto error_media_entity;
+      goto error_subdev_cleanup;
    }
 
    dev_info(dev, "registered\n");
 
    return 0;
+
+error_subdev_cleanup:
+   v4l2_subdev_cleanup(&eg_ec->sd);
 
 error_media_entity:
    media_entity_cleanup(&eg_ec->sd.entity);
@@ -959,6 +1018,7 @@ static void eg_ec_remove(struct i2c_client *client)
    int i;
 
    v4l2_async_unregister_subdev(&eg_ec->sd);
+   v4l2_subdev_cleanup(&eg_ec->sd);
    media_entity_cleanup(&eg_ec->sd.entity);
    eg_ec_free_controls(eg_ec);
 
