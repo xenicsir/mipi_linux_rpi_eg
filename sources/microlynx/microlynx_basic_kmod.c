@@ -254,12 +254,20 @@ static int microlynx_init_controls(struct sensor_def *sensor) {
    int ret;
 
    ctrl_hdlr = &sensor->ctrl_handler;
-   ret = v4l2_ctrl_handler_init(ctrl_hdlr, 4);
+   ret = v4l2_ctrl_handler_init(ctrl_hdlr, 5);
    if (ret)
       return ret;
 
    mutex_init(&sensor->mutex);
    ctrl_hdlr->lock = &sensor->mutex;
+
+   if (microlynx_ep_cfg.nr_of_link_frequencies > 0)
+      v4l2_ctrl_new_int_menu(ctrl_hdlr, NULL, V4L2_CID_LINK_FREQ,
+            microlynx_ep_cfg.nr_of_link_frequencies - 1, 0,
+            microlynx_ep_cfg.link_frequencies);
+   else
+      dev_warn(&sensor->i2c_client->dev,
+               "link-frequencies not found in device tree\n");
 
    // NOTE: Maybe add the v4l2 resoluion/pixel format controls here?
    // But it's not really compliant and expects userspace programs to set it
@@ -467,18 +475,28 @@ static int sensor_enum_mbus_code(struct v4l2_subdev *sd,
 
 static int sensor_set_stream(struct v4l2_subdev *sd, int enable)
 {
-   // Camera should always be streaming. But we can check that.
    int status = 0;
-   u32 read_data;
-   status = GENCPCLIENT_ReadRegister(REG_ACQ_STATUS_R, &read_data);
-   if (status == 0) {
-      if (read_data != 0x1){
-         PRINT_INFO("Acquisition is off, re-enabling it.");
-         status = GENCPCLIENT_WriteRegister(REG_ACQ_START_W, 0x1);
-      }
+
+   mutex_lock(&microlynx_gencp_lock);
+   if (enable) {
+      /*
+       * Force a stop/start cycle so the camera MIPI transmitter goes
+       * through a proper LP->HS transition.  The DW DPHY on RP1 (RPi5)
+       * requires seeing this transition to synchronise; without it the
+       * DPHY never locks and no frames are captured.
+       */
+      GENCPCLIENT_WriteRegister(REG_ACQ_STOP_W, 0x1);
+      usleep_range(5000, 10000);
+      status = GENCPCLIENT_WriteRegister(REG_ACQ_START_W, 0x1);
+      if (status)
+         PRINT_ERROR("Failed to start acquisition\n");
+      else
+         PRINT_INFO("Acquisition started\n");
    } else {
-      PRINT_INFO("Register read failed\n");
+      GENCPCLIENT_WriteRegister(REG_ACQ_STOP_W, 0x1);
+      PRINT_INFO("Acquisition stopped\n");
    }
+   mutex_unlock(&microlynx_gencp_lock);
 
    return 0;
 }
