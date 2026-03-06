@@ -159,7 +159,9 @@ MONO16 (Y16)
         --set-fmt-video=width=1024,height=128,pixelformat="Y16 "
       gst-launch-1.0 -v v4l2src device=/dev/video0 \
         ! "video/x-raw, format=(string)GRAY16_LE, width=1024, height=128" \
-        ! videoconvert ! autovideosink sync=false
+        ! videoconvert \
+        ! "video/x-raw, format=RGB" \
+        ! autovideosink sync=false
   
     1024x1 (single line, first line):
       gst-launch-1.0 -v v4l2src device=/dev/video0 \
