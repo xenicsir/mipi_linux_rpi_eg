@@ -9,7 +9,7 @@ then
    MODULES_FOLDER=lib/modules/$(uname -r)
    if [[ $1 == "make" ]]
    then
-      patch -N -p1 < y16.patch
+      for p in $(ls *.patch 2>/dev/null | sort); do patch -N -p1 < "$p"; done
       make -C /${MODULES_FOLDER}/build M=$PWD
       rm -f *.ko.$COMPRESS_EXT
       rm -f lib

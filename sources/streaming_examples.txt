@@ -1,12 +1,4 @@
 ================================================================================
-EG CAMERA STREAMING EXAMPLES — RASPBERRY PI
-================================================================================
-
-To check which cameras are associated to /dev/videoX devices:
-  eg_dt_camera_config_get.sh
-
-
-================================================================================
 INSTALLATION
 ================================================================================
 
@@ -18,10 +10,6 @@ GStreamer (Raspberry Pi OS):
     gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-tools \
     gstreamer1.0-x gstreamer1.0-alsa gstreamer1.0-gl \
     gstreamer1.0-gtk3 gstreamer1.0-qt5 gstreamer1.0-pulseaudio
-
-v4l-utils:
-  sudo apt-get install v4l-utils
-
 
 ================================================================================
 ENGINECORE CAMERAS
@@ -153,47 +141,50 @@ MICROLYNX CAMERAS
 MONO16 (Y16)
 ──────────────────────────────────────────────
   
-  if "sudo python /usr/bin/microlynxCtrl.py read_reg32 0x00040018" returns 1 :
-    1024x128 (full frame):
-      v4l2-ctl -d /dev/video0 --stream-mmap \
-        --set-fmt-video=width=1024,height=128,pixelformat="Y16 "
-      gst-launch-1.0 -v v4l2src device=/dev/video0 \
-        ! "video/x-raw, format=(string)GRAY16_LE, width=1024, height=128" \
-        ! videoconvert \
-        ! "video/x-raw, format=RGB" \
-        ! autovideosink sync=false
-  
-    1024x1 (single line, first line):
-      gst-launch-1.0 -v v4l2src device=/dev/video0 \
-        ! "video/x-raw, format=(string)GRAY16_LE, width=1024, height=128" \
-        ! queue \
-        ! videocrop top=0 bottom=127 \
-        ! videoscale \
-        ! "video/x-raw, width=1024, height=100" \
-        ! videoconvert \
-        ! waylandsink sync=false
+  1024x128 (full frame):
+    v4l2-ctl -d /dev/video0 --stream-mmap \
+      --set-fmt-video=width=1024,height=128,pixelformat="Y16 -BE"
+    gst-launch-1.0 -v v4l2src device=/dev/video0 \
+      ! "video/x-raw, format=(string)GRAY16_BE, width=1024, height=128" \
+      ! videoconvert \
+      ! "video/x-raw, format=RGB" \
+      ! autovideosink sync=false
+    v4l2-ctl -d /dev/video0 \
+        --set-fmt-video=width=1024,height=128,pixelformat="Y16 -BE" \
+        --stream-mmap --stream-to=- 2>/dev/null | \
+        ffplay -f rawvideo -pixel_format gray16be \
+               -video_size 1024x128 -framerate 350 -		
 
-  if "sudo python /usr/bin/microlynxCtrl.py read_reg32 0x00040018" returns 0 :
-    1024x128 (full frame):
-      v4l2-ctl -d /dev/video0 --stream-mmap \
-        --set-fmt-video=width=1024,height=128,pixelformat="Y16 -BE"
-      gst-launch-1.0 -v v4l2src device=/dev/video0 \
-        ! "video/x-raw, format=(string)GRAY16_BE, width=1024, height=128" \
-        ! videoconvert \
-        ! "video/x-raw, format=RGB" \
-        ! autovideosink sync=false
 
-  
-    1024x1 (single line, first line):
-      gst-launch-1.0 -v v4l2src device=/dev/video0 \
-        ! "video/x-raw, format=(string)GRAY16_BE, width=1024, height=128" \
-        ! queue \
-        ! videocrop top=0 bottom=127 \
-        ! videoscale \
-        ! "video/x-raw, width=1024, height=100" \
-        ! videoconvert \
-        ! waylandsink sync=false
+  1024x1 (single line, first line):
+    gst-launch-1.0 -v v4l2src device=/dev/video0 \
+      ! "video/x-raw, format=(string)GRAY16_BE, width=1024, height=128" \
+      ! queue \
+      ! videocrop top=0 bottom=127 \
+      ! videoscale \
+      ! "video/x-raw, width=1024, height=100" \
+      ! videoconvert \
+      ! waylandsink sync=false
 
+MONO14 (Y14)
+──────────────────────────────────────────────
+
+  1024x128 (full frame):
+    v4l2-ctl -d /dev/video0 --stream-mmap \
+      --set-fmt-video=width=1024,height=128,pixelformat="Y14 "
+    v4l2-ctl -d /dev/video0 \
+      --set-fmt-video=width=1024,height=128,pixelformat="Y14 " \
+      --stream-mmap --stream-to=- 2>/dev/null | \
+      ffplay -f rawvideo -pixel_format gray14 \
+        -video_size 1024x128 -framerate 350 -
+
+  1024x1 (single line, first line):
+    v4l2-ctl -d /dev/video0 \
+      --set-fmt-video=width=1024,height=128,pixelformat="Y14 " \
+      --stream-mmap --stream-to=- 2>/dev/null | \
+      ffplay -f rawvideo -pixel_format gray14 \
+        -video_size 1024x128 -framerate 350  \
+        -vf "crop=1024:1:0:0" -
 
 ================================================================================
 NOTES

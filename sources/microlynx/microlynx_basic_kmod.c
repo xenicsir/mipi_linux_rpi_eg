@@ -20,7 +20,7 @@
 #include "gencp-over-i2c/libunio.h"
 #include "gencp-over-i2c/gencp_client.h"
 
-#define PREFIX "I2C test kmodule"
+#define PREFIX "Microlynx"
 #include "gencp-over-i2c/liblogger.h"
 
 /* ---- GenCP userspace chardev (/dev/microlynx-<bus>-<addr>) ------------- */
@@ -76,6 +76,9 @@ static DEFINE_MUTEX(microlynx_gencp_lock);
 #define REG_IMG_WIDTH_R   0x500E0008
 #define REG_MIPI_ENA_R    0x50ff0010
 #define REG_FIRW_VER_R    0x50FF0000
+#define REG_PIXEL_FORMAT  0x500e0018
+#define PIXEL_FORMAT_MONO16 0x01100007u
+#define PIXEL_FORMAT_MONO14 0x01100025u
 
 /* Mode : resolution and related config&values */
 struct sensor_mode {
@@ -97,6 +100,7 @@ struct sensor_def {
    struct mutex mutex;
    u32 line_height;
    u32 native_width;
+   u32 active_mbus_code;
    struct unio_handle io_handle;
 
    /* GenCP chardev — /dev/microlynx-<bus>-<addr> */
@@ -113,10 +117,6 @@ static const struct sensor_mode sensor_supported_modes[] = {
 };
 #define NUM_SUPPORTED_MODES ARRAY_SIZE(sensor_supported_modes)
 
-u32 sensor_mbus_codes[] = {
-   MEDIA_BUS_FMT_Y16_1X16
-};
-#define NUM_MBUS_CODES ARRAY_SIZE(sensor_mbus_codes)
 
 struct v4l2_fwnode_endpoint microlynx_ep_cfg = {
    .bus_type = V4L2_MBUS_CSI2_DPHY
@@ -208,6 +208,20 @@ static int microlynx_sensor_check(struct sensor_def *sensor) {
    } else {
       PRINT_INFO("FPGA firmware read failed\n");
       goto error_exit;
+   }
+
+   // Pixel format detection
+   sensor->active_mbus_code = MEDIA_BUS_FMT_Y16_1X16;
+   status = GENCPCLIENT_ReadRegister(REG_PIXEL_FORMAT, &read_data);
+   if (status == 0) {
+      if (read_data == PIXEL_FORMAT_MONO14) {
+         sensor->active_mbus_code = MEDIA_BUS_FMT_Y14_1X14;
+         PRINT_INFO("PIXEL_FORMAT = 0x%08x (Y14) -> MEDIA_BUS_FMT_Y14_1X14\n", read_data);
+      } else {
+         PRINT_INFO("PIXEL_FORMAT = 0x%08x -> MEDIA_BUS_FMT_Y16_1X16\n", read_data);
+      }
+   } else {
+      PRINT_INFO("PIXEL_FORMAT read failed, defaulting to MEDIA_BUS_FMT_Y16_1X16\n");
    }
 
    // Resolution
@@ -438,7 +452,7 @@ static int sensor_set_pad_format(
    fmt->format.width = mode->width;
    // fmt->format.height = mode->height;
    fmt->format.height = sensor->line_height;
-   fmt->format.code = sensor_mbus_codes[0];
+   fmt->format.code = sensor->active_mbus_code;
    fmt->format.field = V4L2_FIELD_NONE;
    fmt->format.colorspace = V4L2_COLORSPACE_RAW;
 
@@ -463,12 +477,14 @@ static int sensor_enum_mbus_code(struct v4l2_subdev *sd,
       struct v4l2_subdev_state *sd_state,
       struct v4l2_subdev_mbus_code_enum *code)
 {
-   if (code->index >= NUM_MBUS_CODES)
+   struct sensor_def *sensor = container_of(sd, struct sensor_def, sd);
+
+   if (code->index > 0)
       return -EINVAL;
    if (code->pad)
       return -EINVAL;
 
-   code->code = sensor_mbus_codes[code->index];
+   code->code = sensor->active_mbus_code;
 
    return 0;
 }
@@ -490,11 +506,11 @@ static int sensor_set_stream(struct v4l2_subdev *sd, int enable)
       status = GENCPCLIENT_WriteRegister(REG_ACQ_START_W, 0x1);
       if (status)
          PRINT_ERROR("Failed to start acquisition\n");
-      else
-         PRINT_INFO("Acquisition started\n");
+//      else
+//         PRINT_INFO("Acquisition started\n");
    } else {
       GENCPCLIENT_WriteRegister(REG_ACQ_STOP_W, 0x1);
-      PRINT_INFO("Acquisition stopped\n");
+//     PRINT_INFO("Acquisition stopped\n");
    }
    mutex_unlock(&microlynx_gencp_lock);
 
@@ -511,7 +527,7 @@ static int sensor_enum_frame_size(struct v4l2_subdev *sd,
       return -EINVAL;
    if (fse->pad)
       return -EINVAL;
-   if (fse->code != sensor_mbus_codes[0])
+   if (fse->code != sensor->active_mbus_code)
       return -EINVAL;
 
    fse->min_width  = sensor->native_width;
@@ -526,11 +542,13 @@ static int sensor_enum_frame_interval(struct v4l2_subdev *sd,
       struct v4l2_subdev_state *sd_state,
       struct v4l2_subdev_frame_interval_enum *fie)
 {
+   struct sensor_def *sensor = container_of(sd, struct sensor_def, sd);
+
    if (fie->index > 0)
       return -EINVAL;
    if (fie->pad)
       return -EINVAL;
-   if (fie->code != sensor_mbus_codes[0])
+   if (fie->code != sensor->active_mbus_code)
       return -EINVAL;
 
    fie->interval.numerator   = 1;
@@ -712,7 +730,7 @@ static int microlynx_probe(struct i2c_client *client)
    // sensor->fmt.height = sensor_supported_modes[0].height;
    sensor->fmt.width = sensor->native_width;
    sensor->fmt.height = sensor->line_height;
-   sensor->fmt.code = sensor_mbus_codes[0];
+   sensor->fmt.code = sensor->active_mbus_code;
    sensor->fmt.field = V4L2_FIELD_NONE;
    sensor->fmt.colorspace = V4L2_COLORSPACE_RAW;
 
