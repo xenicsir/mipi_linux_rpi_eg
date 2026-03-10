@@ -103,6 +103,11 @@ then
          echo "# Use line-height=128 for setting line height, minimum is 16 lines." | sudo tee -a $CONFIG_FILE
          echo "#dtoverlay=microlynx-mipi,line-height=128" | sudo tee -a $CONFIG_FILE
       fi
+      if [ ! $(grep "dtoverlay=ilumos-mipi" $CONFIG_FILE) ]
+      then
+         echo "# Uncomment the following line to enable iLumos camera." | sudo tee -a $CONFIG_FILE
+         echo "#dtoverlay=ilumos-mipi" | sudo tee -a $CONFIG_FILE
+      fi
 
    # Install rootfs scripts
    sudo rsync -iahHAXxvz --progress rootfs/ /

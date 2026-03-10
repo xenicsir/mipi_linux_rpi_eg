@@ -9,9 +9,10 @@ then
       else
          OVERLAY_FOLDER="/boot/overlays"
       fi
-      sudo dtc -I dts -O dtb -o $OVERLAY_FOLDER/eg-ec-mipi.dtbo eg-ec-mipi.dts
-      sudo dtc -I dts -O dtb -o $OVERLAY_FOLDER/dione-ir.dtbo dione-ir.dts
-      sudo dtc -I dts -O dtb -o $OVERLAY_FOLDER/microlynx-mipi.dtbo microlynx-mipi.dts
+      for dts in *.dts; do
+         dtbo="${dts%.dts}.dtbo"
+         sudo dtc -I dts -O dtb -o "$OVERLAY_FOLDER/$dtbo" "$dts"
+      done
    fi
 else
    # On host
@@ -20,9 +21,10 @@ else
       if [[ x$3 != x ]]
       then
          mkdir -p $3/boot/overlays
-         dtc -I dts -O dtb -o $3/boot/overlays/eg-ec-mipi.dtbo eg-ec-mipi.dts
-         dtc -I dts -O dtb -o $3/boot/overlays/dione-ir.dtbo dione-ir.dts
-         dtc -I dts -O dtb -o $3/boot/overlays/microlynx-mipi.dtbo microlynx-mipi.dts
+         for dts in *.dts; do
+            dtbo="${dts%.dts}.dtbo"
+            dtc -I dts -O dtb -o "$3/boot/overlays/$dtbo" "$dts"
+         done
       fi
    fi
 fi

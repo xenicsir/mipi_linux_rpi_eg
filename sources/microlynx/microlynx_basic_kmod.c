@@ -80,13 +80,6 @@ static DEFINE_MUTEX(microlynx_gencp_lock);
 #define PIXEL_FORMAT_MONO16 0x01100007u
 #define PIXEL_FORMAT_MONO14 0x01100025u
 
-/* Mode : resolution and related config&values */
-struct sensor_mode {
-        u32 width; // Frame width in pixels
-        u32 height; // Frame height in pixels
-        u32 line_length; // Line length in pixels
-};
-
 struct sensor_def {
    struct i2c_client *i2c_client;
    struct v4l2_subdev sd;
@@ -107,15 +100,6 @@ struct sensor_def {
    struct miscdevice    miscdev;
    char                 miscdev_name[32];
 };
-
-static const struct sensor_mode sensor_supported_modes[] = {
-        {
-               .width = 1024,
-               .height = 128, // NOTE: Value for testing
-               .line_length = 1024, // NOTE: Should be no extra padding
-        },
-};
-#define NUM_SUPPORTED_MODES ARRAY_SIZE(sensor_supported_modes)
 
 
 struct v4l2_fwnode_endpoint microlynx_ep_cfg = {
@@ -420,17 +404,6 @@ static int sensor_get_pad_format(struct v4l2_subdev *sd,
    return 0;
 }
 
-static const struct sensor_mode *sensor_find_mode(u32 width, u32 height)
-{
-    int i;
-    for (i = 0; i < NUM_SUPPORTED_MODES; i++) {
-        if (sensor_supported_modes[i].width == width &&
-            sensor_supported_modes[i].height == height)
-            return &sensor_supported_modes[i];
-    }
-    return NULL;
-}
-
 
 static int sensor_set_pad_format(
       struct v4l2_subdev *sd,
@@ -440,17 +413,16 @@ static int sensor_set_pad_format(
    struct sensor_def *sensor = container_of(sd, struct sensor_def, sd);
    struct v4l2_mbus_framefmt *format;
 
-   printk("DEBUG: SET sensor pad format called");
    if (fmt->pad)
       return -EINVAL;
 
-   const struct sensor_mode *mode = sensor_find_mode(fmt->format.width, fmt->format.height);
-
-   if (!mode)
+   if (fmt->format.width != sensor->native_width ||
+       fmt->format.height != sensor->line_height)
+   {
       return -EINVAL;
+   }
 
-   fmt->format.width = mode->width;
-   // fmt->format.height = mode->height;
+   fmt->format.width  = sensor->native_width;
    fmt->format.height = sensor->line_height;
    fmt->format.code = sensor->active_mbus_code;
    fmt->format.field = V4L2_FIELD_NONE;
@@ -523,7 +495,7 @@ static int sensor_enum_frame_size(struct v4l2_subdev *sd,
 {
    struct sensor_def *sensor = container_of(sd, struct sensor_def, sd);
 
-   if (fse->index >= NUM_SUPPORTED_MODES)
+   if (fse->index > 0)
       return -EINVAL;
    if (fse->pad)
       return -EINVAL;
@@ -726,8 +698,6 @@ static int microlynx_probe(struct i2c_client *client)
       return ret;
 
    //Define the initial camera format
-   // sensor->fmt.width = sensor_supported_modes[0].width;
-   // sensor->fmt.height = sensor_supported_modes[0].height;
    sensor->fmt.width = sensor->native_width;
    sensor->fmt.height = sensor->line_height;
    sensor->fmt.code = sensor->active_mbus_code;
