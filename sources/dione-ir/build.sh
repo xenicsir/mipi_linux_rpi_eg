@@ -18,7 +18,7 @@ then
          sudo make -C /${MODULES_FOLDER}/build M=$PWD INSTALL_MOD_DIR=${LIB_FOLDER} modules_install
          sudo depmod
       fi
-   elif [[ x$1 == "xclean" ]]
+   elif [[ x$1 == "xclean" || x$1 == "xdistclean" ]]
    then
       make -C /${MODULES_FOLDER}/build M=$PWD clean
       rm -rf lib
@@ -36,7 +36,7 @@ else
       then
          make -C $2 M=$PWD INSTALL_MOD_DIR=${LIB_FOLDER} INSTALL_MOD_PATH=$3 modules_install
       fi
-   elif [[ x$1 == "xclean" ]]
+   elif [[ x$1 == "xclean" || x$1 == "xdistclean" ]]
    then
       make -C $2 M=$PWD clean
       rm -rf lib

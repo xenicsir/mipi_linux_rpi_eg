@@ -17,6 +17,16 @@ done
 # Build native patched modules for current kernel version on target only
 if [ $(grep -c Raspberry /proc/cpuinfo) -eq 1 ]
 then
+   if [[ $1 == "distclean" ]]
+   then
+      read -r -n 1 -p "Warning. Do you really want to git revert modified files in kernel_patches/ ? [y/N] " response
+      echo
+      if [[ "$response" != "y" && "$response" != "Y" ]]; then
+          echo "Canceled"
+          exit
+      fi
+   fi
+
    KERNEL_VERSION=$(uname -r | rev | cut -d '-' -f '2-' | rev)
    file=$(echo "kernel_patches/"$KERNEL_VERSION)
    if [[ -d $file ]]
@@ -115,17 +125,9 @@ then
    fi
 fi
 
-if [[ $1 == "clean" ]]
+if [[ $1 == "clean" || $1 == "distclean" ]]
 then
    rm -rf linux_install
-   read -r -n 1 -p "Warning. Do you want to git revert modified files in kernel_patches/ ? [y/N] " response
-   echo
-   if [[ "$response" == "y" || "$response" == "Y" ]]; then
-       git ls-files --modified kernel_patches/ | xargs git restore
-       echo "Reverted kernel_patches."
-   else
-       echo "Cancel git revert kernel_patches."
-   fi
 
 fi
 

@@ -9,7 +9,15 @@ then
    MODULES_FOLDER=lib/modules/$(uname -r)
    if [[ $1 == "make" ]]
    then
-      for p in $(ls *.patch 2>/dev/null | sort); do patch -N -p1 < "$p"; done
+      for p in $(ls *.patch 2>/dev/null | sort); do
+         sentinel=".${p}.applied"
+         if [ -f "$sentinel" ]; then
+            echo "  skip $p (already applied)"
+         else
+            patch -p1 < "$p" || { echo "ERROR: failed to apply $p" >&2; exit 1; }
+            touch "$sentinel"
+         fi
+      done
       make -C /${MODULES_FOLDER}/build M=$PWD
       rm -f *.ko.$COMPRESS_EXT
       rm -f lib
@@ -29,6 +37,10 @@ then
       make -C /${MODULES_FOLDER}/build M=$PWD clean
       rm -rf lib
       rm -f *.ko.xz
+   elif [[ $1 == "distclean" ]]
+   then
+      bash "$0" clean
+      rm -f .*.applied
+      git restore .
    fi
 fi
-
