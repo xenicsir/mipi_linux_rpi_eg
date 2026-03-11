@@ -1,61 +1,127 @@
 #!/usr/bin/env python3
 """
-hexdump_img.py <file> <bytes_per_word> <endian> [-]
+hexdump_img.py FILE [options]
 
-  bytes_per_word : 1, 2, 3 or 4
-  endian         : le (little-endian) or be (big-endian)
-  -              : print to stdout instead of a file
+Display pixel values from a raw binary image file.
 
-Output file: <file>_<bytes_per_word>B_<endian>_hex.txt
+Options:
+  --bpw  N          bytes per word: 1, 2, 3 or 4  (default: 1)
+  --endian  ENDIAN  le (little-endian) or be (big-endian)  (default: le)
+  --resolution WxH  image resolution, e.g. 640x480
+                    If given, display uses [row,col] coordinates.
+                    If omitted, display uses a flat [offset] index.
+  --per-line N      words per output line  (default: 16)
+  -                 print to stdout instead of writing a file
 
-Example:
-  python3 hexdump_img.py frame.y14 2 le
-  python3 hexdump_img.py frame.y16 2 be -
-  python3 hexdump_img.py frame.rgb 3 be
+Examples:
+  hexdump_img.py frame.y16 --bpw 2 --endian be --resolution 640x480 -
+  hexdump_img.py frame.y14 --bpw 2 --endian le --resolution 1024x128 -
+  hexdump_img.py frame.raw --bpw 1
 """
-import sys, struct, os
+import sys, struct, os, argparse
 
-if len(sys.argv) not in (4, 5):
-    print(__doc__)
-    sys.exit(1)
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+parser = argparse.ArgumentParser(
+    description="Hex dump of a raw pixel image file.",
+    add_help=True,
+)
+parser.add_argument("file",
+    help="input binary file")
+parser.add_argument("--bpw", type=int, default=1, choices=[1, 2, 3, 4],
+    metavar="N",
+    help="bytes per word: 1, 2, 3 or 4  (default: 1)")
+parser.add_argument("--endian", default="le", choices=["le", "be"],
+    metavar="ENDIAN",
+    help="le or be  (default: le)")
+parser.add_argument("--resolution", default=None,
+    metavar="WxH",
+    help="image resolution, e.g. 640x480  (enables row/col display)")
+parser.add_argument("--per-line", type=int, default=16,
+    metavar="N",
+    help="words per output line  (default: 16)")
+parser.add_argument("-", dest="to_stdout", action="store_true",
+    help="write to stdout instead of a file")
 
-filename       = sys.argv[1]
-bytes_per_word = int(sys.argv[2])
-endian         = sys.argv[3].lower()
-to_stdout      = len(sys.argv) == 5 and sys.argv[4] == '-'
+# Accept legacy positional syntax: FILE BPW ENDIAN [-]
+# i.e. if argv[2] is a digit and argv[3] is le/be, rewrite as named args.
+args_in = sys.argv[1:]
+if (len(args_in) >= 3
+        and not args_in[1].startswith("-")
+        and args_in[1].isdigit()
+        and args_in[2].lower() in ("le", "be")):
+    rewritten = [args_in[0],
+                 "--bpw",    args_in[1],
+                 "--endian", args_in[2]]
+    for a in args_in[3:]:
+        if a == "-":
+            rewritten.append("-")
+        else:
+            rewritten.append(a)
+    args_in = rewritten
 
-if bytes_per_word not in (1, 2, 3, 4):
-    sys.exit("bytes_per_word must be 1, 2, 3 or 4")
-if endian not in ("le", "be"):
-    sys.exit("endian must be 'le' or 'be'")
+args = parser.parse_args(args_in)
 
-hex_w = bytes_per_word * 2
+filename  = args.file
+bpw       = args.bpw
+endian    = args.endian.lower()
+per_line  = args.per_line
+to_stdout = args.to_stdout
+hex_w     = bpw * 2
 
-data  = open(filename, 'rb').read()
+# ---------------------------------------------------------------------------
+# Parse resolution
+# ---------------------------------------------------------------------------
+width = height = None
+if args.resolution:
+    try:
+        w_s, h_s = args.resolution.lower().split("x")
+        width, height = int(w_s), int(h_s)
+    except (ValueError, AttributeError):
+        sys.exit(f"--resolution must be WxH (e.g. 640x480), got: {args.resolution!r}")
+
+# ---------------------------------------------------------------------------
+# Read and decode words
+# ---------------------------------------------------------------------------
+data  = open(filename, "rb").read()
 total = len(data)
-n     = total // bytes_per_word
+n     = total // bpw
 
-if bytes_per_word == 3:
+if bpw == 3:
     words = []
     for i in range(n):
         b = data[i*3 : i*3+3]
-        if endian == 'be':
+        if endian == "be":
             words.append(b[0] << 16 | b[1] << 8 | b[2])
         else:
             words.append(b[2] << 16 | b[1] << 8 | b[0])
 else:
-    fmt_char = {1: 'B', 2: 'H', 4: 'I'}[bytes_per_word]
-    fmt_end  = '<' if endian == 'le' else '>'
-    words = list(struct.unpack(fmt_end + fmt_char * n, data[:n * bytes_per_word]))
+    fmt_char = {1: "B", 2: "H", 4: "I"}[bpw]
+    fmt_end  = "<" if endian == "le" else ">"
+    words = list(struct.unpack(fmt_end + fmt_char * n, data[:n * bpw]))
 
-COLS_WORDS = 1024
-ROWS = n // COLS_WORDS if n % COLS_WORDS == 0 else 1
-if ROWS == 1:
-    COLS_WORDS = n
+# ---------------------------------------------------------------------------
+# Determine layout
+# ---------------------------------------------------------------------------
+if width is not None:
+    # Resolution known: 2-D display with [row,col]
+    cols  = width
+    rows  = height if height is not None else (n // cols)
+    if n < cols * rows:
+        sys.exit(f"File too small: {n} words < {cols}x{rows} = {cols*rows} words")
+    mode = "2d"
+else:
+    # No resolution: flat 1-D display
+    cols  = n
+    rows  = 1
+    mode  = "1d"
 
-PER_LINE = 16
-dst = f'{filename}_{bytes_per_word}B_{endian.upper()}_hex.txt'
-out = sys.stdout if to_stdout else open(dst, 'w')
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+dst = f"{filename}_{bpw}B_{endian.upper()}_hex.txt"
+out = sys.stdout if to_stdout else open(dst, "w")
 
 def write(s):
     try:
@@ -63,20 +129,44 @@ def write(s):
     except BrokenPipeError:
         sys.exit(0)
 
-write(f'{os.path.basename(filename)}  {bytes_per_word}B/word  {endian.upper()}  '
-      f'{COLS_WORDS}x{ROWS} words  ({total} bytes)\n')
+# Header line
+if mode == "2d":
+    write(f"{os.path.basename(filename)}  {bpw}B/word  {endian.upper()}  "
+          f"{cols}x{rows} px  ({total} bytes)\n")
+else:
+    write(f"{os.path.basename(filename)}  {bpw}B/word  {endian.upper()}  "
+          f"{n} words  ({total} bytes)\n")
+
+# Column header
 def col_hdr(i, w):
-    h = f'+{i}'
+    h = f"+{i}"
     return h.rjust(w) if len(h) <= w else str(i).rjust(w)
-write('[row,col]  ' + '  '.join(col_hdr(i, hex_w) for i in range(PER_LINE)) + '\n')
-write('-' * (11 + PER_LINE * (hex_w + 2)) + '\n')
-for row in range(ROWS):
-    for col in range(0, COLS_WORDS, PER_LINE):
-        vals = words[row * COLS_WORDS + col : row * COLS_WORDS + col + PER_LINE]
-        write(f'[{row:03d},{col:04d}]  ' +
-              '  '.join(f'{v:0{hex_w}X}' for v in vals) + '\n')
-    write('\n')
+
+if mode == "2d":
+    data_label = f"[{0:04d},{0:04d}]"   # e.g. "[0000,0000]"
+    hdr_label  = "[row, col]"
+else:
+    data_label = f"[{0:08d}]"            # e.g. "[00000000]"
+    hdr_label  = "[offset]"
+pfx_w = len(data_label) + 2             # data label + 2 spaces separator
+hdr_pad = " " * (pfx_w - len(hdr_label))
+write(hdr_label + hdr_pad + "  ".join(col_hdr(i, hex_w) for i in range(per_line)) + "\n")
+write("-" * (pfx_w + per_line * (hex_w + 2)) + "\n")
+
+# Data
+if mode == "2d":
+    for row in range(rows):
+        for col in range(0, cols, per_line):
+            chunk = words[row * cols + col : row * cols + col + per_line]
+            write(f"[{row:04d},{col:04d}]  "
+                  + "  ".join(f"{v:0{hex_w}X}" for v in chunk) + "\n")
+        write("\n")
+else:
+    for offset in range(0, n, per_line):
+        chunk = words[offset : offset + per_line]
+        write(f"[{offset:08d}]  "
+              + "  ".join(f"{v:0{hex_w}X}" for v in chunk) + "\n")
 
 if not to_stdout:
     out.close()
-    print(f'Written {ROWS} rows x {COLS_WORDS} words -> {dst}')
+    print(f"Written {rows} rows x {cols} words -> {dst}")
