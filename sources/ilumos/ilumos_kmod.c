@@ -22,14 +22,10 @@
 #include <linux/unaligned.h>
 #endif
 
-#define REG_ACQ_START_W   0x500F0000
-#define REG_ACQ_STOP_W    0x500F0004
-#define REG_ACQ_STATUS_R  0x500F0008
-#define REG_IMG_HEIGHT_R  0x500E000C
-#define REG_IMG_WIDTH_R   0x500E0008
-#define REG_MIPI_ENA_R    0x50ff0010
-#define REG_FIRW_VER_R    0x50FF0000
-#define REG_PIXEL_FORMAT  0x500e0018
+#define REG_IMG_HEIGHT_R  0x50000004
+#define REG_IMG_WIDTH_R   0x50000000
+#define REG_FIRW_VER_R    0x10000000
+#define REG_PIXEL_FORMAT  0x50000008
 #define PIXEL_FORMAT_MONO16 0x01100007u
 #define PIXEL_FORMAT_MONO14 0x01100025u
 
@@ -307,33 +303,17 @@ static int ilumos_sensor_check(struct sensor_def *sensor)
 {
 	int status;
 	u32 read_data = 0;
-
-	/* MIPI enable check */
-	status = ilumos_i2c_read_register(sensor->i2c_client, REG_MIPI_ENA_R,
-					  &read_data);
-	if (status == 0) {
-		if (read_data == 0x1) {
-			dev_info(&sensor->i2c_client->dev,
-				 "MIPI is enabled, status = %#08x\n", read_data);
-		} else {
-			dev_err(&sensor->i2c_client->dev,
-				"MIPI is not enabled on this camera, license missing? Exiting...\n");
-			goto error_exit;
-		}
-	} else {
-		dev_err(&sensor->i2c_client->dev, "MIPI status read failed\n");
-		goto error_exit;
-	}
+        u8  buf[64];
 
 	/* Firmware version */
-	status = ilumos_i2c_read_register(sensor->i2c_client, REG_FIRW_VER_R,
-					  &read_data);
+	status = ilumos_i2c_read_string(sensor->i2c_client, REG_FIRW_VER_R,
+					  buf, sizeof(buf));
 	if (status == 0) {
 		dev_info(&sensor->i2c_client->dev,
-			 "FPGA firmware version = %#08x\n", read_data);
+			 "FPGA firmware version = %s\n", buf);
 	} else {
 		dev_err(&sensor->i2c_client->dev, "FPGA firmware read failed\n");
-		goto error_exit;
+//		goto error_exit;
 	}
 
 	/* Pixel format detection */
@@ -377,6 +357,9 @@ static int ilumos_sensor_check(struct sensor_def *sensor)
 		dev_info(&sensor->i2c_client->dev,
 			 "Width register read failed, using default %u\n",
 			 sensor->width);
+
+	sensor->height = ILUMOS_DEFAULT_HEIGHT;
+	sensor->width  = ILUMOS_DEFAULT_WIDTH;
 
 	return 0;
 
@@ -572,26 +555,8 @@ static int sensor_enum_mbus_code(struct v4l2_subdev *sd,
 
 static int sensor_set_stream(struct v4l2_subdev *sd, int enable)
 {
-	struct sensor_def *sensor = container_of(sd, struct sensor_def, sd);
-	int status = 0;
-
-	if (enable) {
-		/*
-		 * Force a stop/start cycle so the camera MIPI transmitter goes
-		 * through a proper LP->HS transition.  The DW DPHY on RP1 (RPi5)
-		 * requires seeing this transition to synchronise.
-		 */
-		ilumos_i2c_write_register(sensor->i2c_client, REG_ACQ_STOP_W, 0x1);
-		usleep_range(5000, 10000);
-		status = ilumos_i2c_write_register(sensor->i2c_client,
-						   REG_ACQ_START_W, 0x1);
-		if (status)
-			dev_err(&sensor->i2c_client->dev,
-				"Failed to start acquisition\n");
-	} else {
-		ilumos_i2c_write_register(sensor->i2c_client, REG_ACQ_STOP_W, 0x1);
-	}
-
+        // The camera is streaming continuously
+        // CSI clock is non-continuous, no need to stop-start the streaming
 	return 0;
 }
 

@@ -27,9 +27,9 @@
 			#size-cells = <0>; //size in bytes, 0 is no allocation
 			status = "okay";
 
-			exosens_ilumos: exosens_ilumos@48 {
+			exosens_ilumos: exosens_ilumos@30 {
 				compatible = "exosens,ilumos";
-				reg = <0x48>;
+				reg = <0x30>;
 				status = "okay";
 
 				rotation = <0>;
