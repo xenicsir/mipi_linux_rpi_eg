@@ -1,5 +1,5 @@
 /*
- *
+ * 
  * Copyright (c) 2026, Exosens, All Rights Reserved.
  *
  */
@@ -22,12 +22,25 @@
 #include <linux/unaligned.h>
 #endif
 
-#define REG_IMG_HEIGHT_R  0x50000004
-#define REG_IMG_WIDTH_R   0x50000000
+// Crosslink register interface
+#define REG_CROSSLINK_ADDR      0x50000C00
+#define REG_CROSSLINK_DATA      0x50000C04
+#define REG_CROSSLINK_R_WR_CMD  0x50000C08
+
+#define REG_CROSSLINK_FW_VERSION    0x0
+#define REG_CROSSLINK_PIXEL_FORMAT  0x2
+#define REG_CROSSLINK_LINE_LENGTH   0x3
+#define REG_CROSSLINK_FIFO_STATUS   0x7
+#define REG_CROSSLINK_FRAME_COUNTER 0x8
+#define REG_CROSSLINK_FRAME_SIZE    0x9
+
+#define READ_CROSSLINK  0x1
+#define WRITE_CROSSLINK 0x0
+
+
 #define REG_FIRW_VER_R    0x10000000
-#define REG_PIXEL_FORMAT  0x50000008
-#define PIXEL_FORMAT_MONO16 0x01100007u
-#define PIXEL_FORMAT_MONO14 0x01100025u
+#define PIXEL_FORMAT_MONO16 0x2E
+#define PIXEL_FORMAT_MONO14 0x2D
 
 #define ILUMOS_DEFAULT_WIDTH   1280
 #define ILUMOS_DEFAULT_HEIGHT  1024
@@ -170,6 +183,24 @@ static int ilumos_i2c_read_string(struct i2c_client *client, u32 reg,
 	return 0;
 }
 
+static int ilumos_i2c_read_crosslink_register(struct i2c_client *client, u32 reg, u32 *val)
+{
+	int status;
+
+        status = ilumos_i2c_write_register(client, REG_CROSSLINK_ADDR, reg);
+        if (status == 0)
+        {
+           status = ilumos_i2c_write_register(client, REG_CROSSLINK_R_WR_CMD, READ_CROSSLINK);
+           if (status == 0)
+           {
+              status = ilumos_i2c_read_register(client, REG_CROSSLINK_DATA,
+                                          val);
+           }
+        }
+
+        return status;
+}
+
 /* ---- chardev file operations ------------------------------------------ */
 
 static int ilumos_cdev_open(struct inode *inode, struct file *file)
@@ -304,6 +335,7 @@ static int ilumos_sensor_check(struct sensor_def *sensor)
 	int status;
 	u32 read_data = 0;
         u8  buf[64];
+        int pixel_byte_size = 2;
 
 	/* Firmware version */
 	status = ilumos_i2c_read_string(sensor->i2c_client, REG_FIRW_VER_R,
@@ -318,11 +350,12 @@ static int ilumos_sensor_check(struct sensor_def *sensor)
 
 	/* Pixel format detection */
 	sensor->active_mbus_code = MEDIA_BUS_FMT_Y16_1X16;
-	status = ilumos_i2c_read_register(sensor->i2c_client, REG_PIXEL_FORMAT,
+	status = ilumos_i2c_read_crosslink_register(sensor->i2c_client, REG_CROSSLINK_PIXEL_FORMAT,
 					  &read_data);
 	if (status == 0) {
 		if (read_data == PIXEL_FORMAT_MONO14) {
 			sensor->active_mbus_code = MEDIA_BUS_FMT_Y14_1X14;
+                        pixel_byte_size = 2;
 			dev_info(&sensor->i2c_client->dev,
 				 "PIXEL_FORMAT = 0x%08x (Y14) -> MEDIA_BUS_FMT_Y14_1X14\n",
 				 read_data);
@@ -340,23 +373,38 @@ static int ilumos_sensor_check(struct sensor_def *sensor)
 	sensor->height = ILUMOS_DEFAULT_HEIGHT;
 	sensor->width  = ILUMOS_DEFAULT_WIDTH;
 
-	status = ilumos_i2c_read_register(sensor->i2c_client, REG_IMG_HEIGHT_R,
+	status = ilumos_i2c_read_crosslink_register(sensor->i2c_client, REG_CROSSLINK_LINE_LENGTH,
 					  &read_data);
 	if (status == 0)
-		sensor->height = read_data;
-	else
+        {
+		sensor->width = read_data / pixel_byte_size;
 		dev_info(&sensor->i2c_client->dev,
-			 "Height register read failed, using default %u\n",
-			 sensor->height);
-
-	status = ilumos_i2c_read_register(sensor->i2c_client, REG_IMG_WIDTH_R,
-					  &read_data);
-	if (status == 0)
-		sensor->width = read_data;
+			 "sensor->width %u\n",
+			 sensor->width);
+        }
 	else
 		dev_info(&sensor->i2c_client->dev,
 			 "Width register read failed, using default %u\n",
 			 sensor->width);
+
+//	status = ilumos_i2c_read_crosslink_register(sensor->i2c_client, REG_CROSSLINK_LINE_LENGTH,
+//					  &read_data);
+	status = ilumos_i2c_read_crosslink_register(sensor->i2c_client, REG_CROSSLINK_FRAME_SIZE,
+					  &read_data);
+	if (status == 0)
+        {
+		dev_info(&sensor->i2c_client->dev,
+			 "frame size %u\n",
+			 read_data);
+		sensor->height = read_data/pixel_byte_size/sensor->width;
+		dev_info(&sensor->i2c_client->dev,
+			 "sensor->height %u\n",
+			 sensor->height);
+        }
+	else
+		dev_info(&sensor->i2c_client->dev,
+			 "Height register read failed, using default %u\n",
+			 sensor->height);
 
 	sensor->height = ILUMOS_DEFAULT_HEIGHT;
 	sensor->width  = ILUMOS_DEFAULT_WIDTH;
