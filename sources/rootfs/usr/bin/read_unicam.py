@@ -4,7 +4,7 @@ BCM2835 Unicam CSI-2 register analyser
 Offsets from drivers/media/platform/bcm2835/vc4-regs-unicam.h
 Run as root while streaming: sudo python3 read_unicam.py
 """
-import mmap, struct, sys, os
+import mmap, struct, sys, os, time
 
 BASE  = 0xfe801000   # RPi4 unicam CSI0 (CSI1 = 0xfe800000)
 MSIZE = 0x500
@@ -56,6 +56,140 @@ PPM = ["NONE","8-bit","10-bit","12-bit","14-bit","16-bit","?","?"]
 
 # ---------------------------------------------------------------------------
 
+def measure_frame_size():
+    """Measure actual bytes the Unicam DMA writes per frame.
+
+    Strategy: the driver uses a fixed ring buffer (IBSA0 never changes).
+    IBWP advances continuously and wraps from IBEA0 back to IBSA0 when the
+    buffer is full.  Each wrap = one full buffer cycle.  By timing wraps and
+    counting the lines in the buffer we derive a bytes/frame estimate.
+
+    Additionally we look for IBWP pauses (inter-frame gaps): the CSI-2
+    Frame End → Frame Start gap causes IBWP to stall briefly.  Sampling at
+    ~0.5 ms lets us detect those pauses and count lines between them.
+
+    Requires active streaming.  Run with --frame-size.
+    """
+    try:
+        fd = os.open("/dev/mem", os.O_RDONLY | os.O_SYNC)
+    except PermissionError:
+        sys.exit("Run as root: sudo python3 read_unicam.py --frame-size")
+    mm = mmap.mmap(fd, MSIZE, mmap.MAP_SHARED, mmap.PROT_READ, offset=BASE)
+
+    def rd(off):
+        mm.seek(off)
+        return struct.unpack("<I", mm.read(4))[0]
+
+    ibsa = rd(R["IBSA0"])
+    ibea = rd(R["IBEA0"])
+    ibls = rd(R["IBLS"])
+    buf_size = ibea - ibsa if ibea > ibsa else 0
+
+    print(f"Ring buffer: 0x{ibsa:08x}..0x{ibea:08x}  ({buf_size} B = "
+          f"{buf_size // ibls if ibls else '?'} configured lines)\n")
+    print("Polling IBWP at 0.5 ms — looking for frame gaps and buffer wraps.")
+    print("Ctrl-C to stop.\n")
+
+    prev_wp  = rd(R["IBWP"])
+    samples  = []          # (timestamp, wp_offset_from_ibsa)
+    wraps    = []          # timestamps of buffer wrap events
+    t_start  = time.monotonic()
+
+    try:
+        while True:
+            time.sleep(0.0005)
+            wp  = rd(R["IBWP"])
+            now = time.monotonic() - t_start
+
+            offset = wp - ibsa if wp >= ibsa else buf_size - (ibsa - wp)
+            samples.append((now, offset))
+
+            # Detect buffer wrap: IBWP jumped backward by more than half the buffer
+            if prev_wp > ibsa and wp < prev_wp and (prev_wp - wp) > buf_size // 2:
+                wraps.append(now)
+                elapsed = wraps[-1] - wraps[-2] if len(wraps) >= 2 else None
+                msg = f"  wrap at t={now:.3f}s"
+                if elapsed:
+                    msg += f"  (period {elapsed*1000:.1f} ms → {1/elapsed:.2f} Hz buffer cycle)"
+                print(msg)
+
+            prev_wp = wp
+
+    except KeyboardInterrupt:
+        pass
+
+    mm.close()
+    os.close(fd)
+    print()
+
+    if len(samples) < 10:
+        print("  Not enough samples.")
+        sys.exit(0)
+
+    # ── Frame gap detection ──────────────────────────────────────────────
+    # A frame gap = IBWP stalls (delta < threshold) after a burst of activity.
+    BURST_THR  = 64      # bytes — minimum advance to count as "active"
+    GAP_THR_MS = 0.5     # ms — minimum stall duration to count as frame gap
+
+    gap_starts = []  # (time, offset) at start of each gap
+    in_gap     = False
+    gap_t      = 0.0
+    gap_off    = 0
+
+    for i in range(1, len(samples)):
+        t_prev, off_prev = samples[i-1]
+        t_cur,  off_cur  = samples[i]
+        delta = (off_cur - off_prev) % buf_size if buf_size else off_cur - off_prev
+        stall = delta < BURST_THR
+
+        if stall and not in_gap:
+            in_gap  = True
+            gap_t   = t_cur
+            gap_off = off_prev
+        elif not stall and in_gap:
+            gap_dur_ms = (t_cur - gap_t) * 1000
+            if gap_dur_ms >= GAP_THR_MS:
+                gap_starts.append((gap_t, gap_off))
+            in_gap = False
+
+    if len(gap_starts) >= 2:
+        print(f"  Detected {len(gap_starts)} inter-frame gaps:\n")
+        frame_sizes = []
+        for i in range(1, len(gap_starts)):
+            t0, off0 = gap_starts[i-1]
+            t1, off1 = gap_starts[i]
+            written = (off1 - off0) % buf_size if buf_size else off1 - off0
+            lines   = written // ibls if ibls else 0
+            period  = (t1 - t0) * 1000
+            fps     = 1000 / period if period else 0
+            frame_sizes.append(written)
+            print(f"  frame {i:3d}: {written:8d} B = {lines:4d} lines  "
+                  f"period={period:.1f} ms  ({fps:.2f} fps)")
+
+        avg = sum(frame_sizes) // len(frame_sizes)
+        mn  = min(frame_sizes)
+        mx  = max(frame_sizes)
+        print(f"\n  ── summary ({len(frame_sizes)} frames) ──")
+        print(f"  avg  {avg:8d} B  = {avg // ibls if ibls else '?':4} lines")
+        print(f"  min  {mn:8d} B")
+        print(f"  max  {mx:8d} B")
+        if mn != mx:
+            print(f"  WARNING: frame size varies — possible dropped lines (PLE effect)")
+    elif len(wraps) >= 2:
+        # Fallback: estimate from buffer wrap timing
+        periods = [wraps[i] - wraps[i-1] for i in range(1, len(wraps))]
+        avg_period = sum(periods) / len(periods)
+        print(f"  No clear frame gaps found.  Using {len(periods)} buffer wrap(s).")
+        print(f"  Buffer cycle: {avg_period*1000:.1f} ms")
+        print(f"  Buffer = {buf_size} B.  Frame size needs fps to compute.")
+        print(f"  If fps is known: frame_bytes = {buf_size} / (fps × {avg_period:.3f})")
+    else:
+        print("  Insufficient data — no frame gaps or wraps detected.")
+        print("  Try streaming at higher fps, or run longer.")
+
+    sys.exit(0)
+
+
 def rd_all():
     try:
         fd = os.open("/dev/mem", os.O_RDONLY | os.O_SYNC)
@@ -82,6 +216,9 @@ def sep(title=""):
         print("─" * 60)
 
 # ---------------------------------------------------------------------------
+if "--frame-size" in sys.argv:
+    measure_frame_size()
+
 v = rd_all()
 sep()
 print(f"  BCM2835 Unicam  base=0x{BASE:08x}  (RPi4 CSI0)")
@@ -349,3 +486,6 @@ else:
         print("  [!] DL (data loss) → packets were dropped.")
 
 sep()
+
+
+
