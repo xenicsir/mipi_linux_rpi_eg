@@ -6,6 +6,8 @@
 /{
 	compatible = "brcm,bcm2835";
 
+	/* ===== CAM1 path (default, RPi4-compatible) ===== */
+
 	fragment@0 { //Physical controller from the broadcom chip
 		target = <&i2c0if>;
 		__overlay__ {
@@ -63,5 +65,59 @@
 				};
 			};
 		};
+	};
+
+	/* ===== CAM0 path (dormant by default, RPi5 only) ===== */
+
+	fragment@5 {
+		target = <&i2c_csi_dsi0>;
+		__dormant__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "okay";
+
+			exosens_ilumos_cam0: exosens_ilumos@30 {
+				compatible = "exosens,ilumos";
+				reg = <0x30>;
+				status = "okay";
+
+				rotation = <0>;
+				orientation = <2>;
+
+				port {
+					ilumos_i2c_endpoint_cam0: endpoint {
+						remote-endpoint = <&ilumos_csi_endpoint_cam0>;
+						clock-lanes = <0>;
+						data-lanes = <1 2>;
+						clock-noncontinuous;
+						link-frequencies = /bits/ 64 <550000000>;
+					};
+				};
+			};
+		};
+	};
+
+	fragment@6 {
+		target = <&csi0>;
+		__dormant__ {
+			status = "okay";
+			brcm,media-controller;
+
+			port {
+				ilumos_csi_endpoint_cam0: endpoint {
+					remote-endpoint = <&ilumos_i2c_endpoint_cam0>;
+					clock-lanes = <0>;
+					data-lanes = <1 2>;
+					clock-noncontinuous;
+				};
+			};
+		};
+	};
+
+	__overrides__ {
+		/* Switch all fragments to CAM0 path; deactivates i2c0if/mux (RPi4-only) */
+		cam0 = <0>, "-0-2-3-4+5+6";
+		/* Restore CAM1 path (symmetric inverse of cam0) */
+		cam1 = <0>, "+0+2+3+4-5-6";
 	};
 };

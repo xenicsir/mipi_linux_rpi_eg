@@ -78,22 +78,18 @@ MONO16 — not supported on Bullseye and Ubuntu 22.04.4
 ──────────────────────────────────────────────────────
 
   640x480:
-    v4l2-ctl -d /dev/video0 --stream-mmap \
-      --set-fmt-video=width=640,height=480,pixelformat="Y16 -BE"
-    gst-launch-1.0 -v v4l2src device=/dev/video0 \
-      ! "video/x-raw, format=(string)GRAY16_BE, width=640, height=480" \
-      ! videoconvert \
-      ! "video/x-raw, format=RGB" \
-      ! autovideosink sync=false
+    v4l2-ctl -d /dev/video0 \
+      --set-fmt-video=width=640,height=480,pixelformat="Y16 -BE" \
+      --stream-mmap --stream-to=- 2>/dev/null | \
+      ffplay -f rawvideo -pixel_format gray16be \
+             -video_size 640x480 -framerate 60 -
 
   1280x1024:
-    v4l2-ctl -d /dev/video0 --stream-mmap \
-      --set-fmt-video=width=1280,height=1024,pixelformat="Y16 -BE"
-    gst-launch-1.0 -v v4l2src device=/dev/video0 \
-      ! "video/x-raw, format=(string)GRAY16_BE, width=1280, height=1024" \
-      ! videoconvert \
-      ! "video/x-raw, format=RGB" \
-      ! autovideosink sync=false
+    v4l2-ctl -d /dev/video0 \
+      --set-fmt-video=width=1280,height=1024,pixelformat="Y16 -BE" \
+      --stream-mmap --stream-to=- 2>/dev/null | \
+      ffplay -f rawvideo -pixel_format gray16be \
+             -video_size 1280x1024 -framerate 30 -
 
 
 ================================================================================
@@ -142,18 +138,11 @@ MONO16 (Y16)
 ──────────────────────────────────────────────
   
   1024x128 (full frame):
-    v4l2-ctl -d /dev/video0 --stream-mmap \
-      --set-fmt-video=width=1024,height=128,pixelformat="Y16 -BE"
-    gst-launch-1.0 -v v4l2src device=/dev/video0 \
-      ! "video/x-raw, format=(string)GRAY16_BE, width=1024, height=128" \
-      ! videoconvert \
-      ! "video/x-raw, format=RGB" \
-      ! autovideosink sync=false
     v4l2-ctl -d /dev/video0 \
         --set-fmt-video=width=1024,height=128,pixelformat="Y16 -BE" \
         --stream-mmap --stream-to=- 2>/dev/null | \
         ffplay -f rawvideo -pixel_format gray16be \
-               -video_size 1024x128 -framerate 350 -		
+               -video_size 1024x128 -framerate 350 -
 
 
   1024x1 (single line, first line):
@@ -192,6 +181,10 @@ NOTES
 
 • Y16 (16-bit greyscale) is not supported on Bullseye and Ubuntu 22.04.4.
   Use RGB888 (RGB3) or UYVY instead.
+
+• MONO16 (GRAY16_BE) uses v4l2-ctl piped to ffplay rather than GStreamer.
+  GStreamer's v4l2src with display sinks (waylandsink, autovideosink) triggers
+  a reconfigure cycle that breaks streaming for 16-bit greyscale formats.
 
 • Microlynx: the sensor transmits 128 lines over MIPI (hardware constraint).
   Use videocrop to extract only the first line (actual 1D data).
