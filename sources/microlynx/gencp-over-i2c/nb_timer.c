@@ -11,6 +11,7 @@
 // Memory allocation calls
 #ifdef __KERNEL__ // automatically defined when building kernel modules
     #include <linux/timer.h>
+    #include <linux/version.h>
 #else
     #include <string.h>
     #define timer_setup(...) ((void)0) //ignore the timer setup function from kernel target
@@ -25,7 +26,11 @@ size_t _timer_array_len;
 
 #ifdef __KERNEL__
 static void _timer_callback (struct timer_list *t){
-    struct timer_def *timer_ptr = from_timer(timer_ptr, t, timer); // similar to container_of macro
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 16, 0)
+    struct timer_def *timer_ptr = timer_container_of(timer_ptr, t, timer);
+#else
+    struct timer_def *timer_ptr = from_timer(timer_ptr, t, timer);
+#endif
     timer_ptr->done = 1;
     timer_ptr->active = 0;
     PRINT_DEBUG("Timer_triggered #%d\n", timer_ptr->id);
@@ -92,9 +97,9 @@ int nb_timer_delete(int timer_id) {
     } else {
         PRINT_DEBUG("Deleting timer id#%d\n", timer_id);
         /* Do NOT memset: zeroing timer_list.function causes BUG_ON(!timer->function)
-         * in the next mod_timer() call. del_timer() is sufficient for kernel cleanup. */
+         * in the next mod_timer() call. timer_delete() is sufficient for kernel cleanup. */
         #ifdef __KERNEL__
-        del_timer(&timer_ptr->timer);
+        timer_delete(&timer_ptr->timer);
         timer_ptr->done = 1;
         #endif
         timer_ptr->active = 0;
