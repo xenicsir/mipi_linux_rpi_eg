@@ -93,7 +93,7 @@ then
          CONFIG_FILE="/boot/config.txt"
       fi
       echo Customize $CONFIG_FILE
-      if [ ! $(grep "dtoverlay=eg-ec-mipi" $CONFIG_FILE) ]
+      if ! grep -q "dtoverlay=eg-ec-mipi" $CONFIG_FILE
       then
          echo "# Uncomment the following line to enable EngineCore camera" | sudo tee -a $CONFIG_FILE
          echo "#dtoverlay=eg-ec-mipi" | sudo tee -a $CONFIG_FILE
@@ -102,18 +102,18 @@ then
          echo "# Uncomment the following line to modify the EngineCore I2C address. 0x16 by default." | sudo tee -a $CONFIG_FILE
          echo "#dtparam=i2c-addr=0x16" | sudo tee -a $CONFIG_FILE
       fi
-      if [ ! $(grep "dtoverlay=dione-ir" $CONFIG_FILE) ]
+      if ! grep -q "dtoverlay=dione-ir" $CONFIG_FILE
       then
          echo "# Uncomment the following line to enable Dione camera" | sudo tee -a $CONFIG_FILE
          echo "#dtoverlay=dione-ir" | sudo tee -a $CONFIG_FILE
       fi
-#      if [ ! $(grep "dtoverlay=microlynx-mipi" $CONFIG_FILE) ]
+#      if ! grep -q "dtoverlay=microlynx-mipi" $CONFIG_FILE
 #      then
 #         echo "# Uncomment the following line to enable Microlynx camera." | sudo tee -a $CONFIG_FILE
 #         echo "# Use line-height=128 for setting line height, minimum is 16 lines." | sudo tee -a $CONFIG_FILE
 #         echo "#dtoverlay=microlynx-mipi,line-height=128" | sudo tee -a $CONFIG_FILE
 #      fi
-#      if [ ! $(grep "dtoverlay=ilumos-mipi" $CONFIG_FILE) ]
+#      if ! grep -q "dtoverlay=ilumos-mipi" $CONFIG_FILE
 #      then
 #         echo "# Uncomment the following line to enable iLumos camera." | sudo tee -a $CONFIG_FILE
 #         echo "#dtoverlay=ilumos-mipi" | sudo tee -a $CONFIG_FILE

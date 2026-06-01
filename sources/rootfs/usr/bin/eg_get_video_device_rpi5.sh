@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Return the /dev/videoX node for an EG camera on the specified CAM port.
+# Return the /dev/videoX node and associated I2C device for an EG camera.
 # Usage: eg_get_video_device_rpi5.sh [0|1]
 # Default port: 1
 
@@ -18,4 +18,16 @@ if [[ -z "$media" ]]; then
    exit 1
 fi
 
-media-ctl -p -d "$media" | grep rp1-cfe-csi2_ch0 -A 5 | grep "device node name" | awk '{print $4}'
+topology=$(media-ctl -p -d "$media")
+
+# Video capture device
+echo "$topology" | awk '/^- entity.*rp1-cfe-csi2_ch0/{f=1} f && /device node name/{print $4; f=0; exit}'
+
+# I2C character device: resolve via the sensor subdev sysfs path
+sensor_name=$(echo "$topology" | awk '/^- entity/ { name=$4 } /subtype Sensor/ { print name; exit }')
+sensor_subdev=$(echo "$topology" | awk '/subtype Sensor/{f=1} f && /device node name/{print $4; f=0; exit}')
+
+if [[ -n "$sensor_subdev" && -n "$sensor_name" ]]; then
+   i2c_client=$(basename "$(readlink -f /sys/class/video4linux/$(basename "$sensor_subdev")/device 2>/dev/null)")
+   ls /dev/${sensor_name}*${i2c_client}* 2>/dev/null | head -1
+fi

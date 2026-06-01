@@ -1,3 +1,16 @@
+################################################################################
+#                                                                              #
+#  VIDEO DEVICE — REPLACE /dev/video0 WITH THE CORRECT DEVICE FOR YOUR BOARD  #
+#                                                                              #
+#  RPi4 : always /dev/video0                                                  #
+#                                                                              #
+#  RPi5 : variable — use the script to find the device for each port:         #
+#           eg_get_video_device_rpi5.sh      → CAM1 (default)                 #
+#           eg_get_video_device_rpi5.sh 0    → CAM0                           #
+#           eg_get_video_device_rpi5.sh 1    → CAM1                           #
+#                                                                              #
+################################################################################
+
 ================================================================================
 INSTALLATION
 ================================================================================
