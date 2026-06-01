@@ -139,7 +139,8 @@ import serial
 import numpy as np
 import ctypes
 
-IOCTL_I2C_SLAVE=0x0703
+#IOCTL_I2C_SLAVE=0x0703 # don't force
+IOCTL_I2C_SLAVE=0x0706  # force access
 IOCTL_I2C_TIMEOUT=0x0702
 
 GencpStatus = {

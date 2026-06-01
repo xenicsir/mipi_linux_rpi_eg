@@ -1,0 +1,41 @@
+--- a/dphy.c
++++ b/dphy.c
+@@ -31,6 +31,9 @@
+ 
+ /* DW dphy Host Transactions */
+ #define DPHY_HS_RX_CTRL_LANE0_OFFSET	0x44
++#define DPHY_HS_RX_CTRL_LANE1_OFFSET	0x54
++#define DPHY_HS_RX_CTRL_LANE2_OFFSET	0x84
++#define DPHY_HS_RX_CTRL_LANE3_OFFSET	0x94
+ #define DPHY_PLL_INPUT_DIV_OFFSET	0x17
+ #define DPHY_PLL_LOOP_DIV_OFFSET	0x18
+ #define DPHY_PLL_DIV_CTRL_OFFSET	0x19
+@@ -114,7 +117,14 @@
+ 		{ 1249, 0b101011 }, { 1299, 0b111011 }, { 1349, 0b001100 },
+ 		{ 1399, 0b011100 }, { 1449, 0b101100 }, { 1500, 0b111100 },
+ 	};
+-	unsigned int i;
++	static const u8 lane_offsets[] = {
++		DPHY_HS_RX_CTRL_LANE0_OFFSET,
++		DPHY_HS_RX_CTRL_LANE1_OFFSET,
++		DPHY_HS_RX_CTRL_LANE2_OFFSET,
++		DPHY_HS_RX_CTRL_LANE3_OFFSET,
++	};
++	unsigned int i, lane;
++	u8 hsfreq;
+ 
+ 	if (mbps < 80 || mbps > 1500)
+ 		dphy_err("DPHY: Datarate %u Mbps out of range\n", mbps);
+@@ -124,8 +134,10 @@
+ 			break;
+ 	}
+ 
+-	dphy_transaction(dphy, DPHY_HS_RX_CTRL_LANE0_OFFSET,
+-			 hsfreqrange_table[i][1] << 1);
++	hsfreq = hsfreqrange_table[i][1] << 1;
++	for (lane = 0; lane < dphy->active_lanes &&
++			lane < ARRAY_SIZE(lane_offsets); lane++)
++		dphy_transaction(dphy, lane_offsets[lane], hsfreq);
+ }
+ 
+ static void dphy_init(struct dphy_data *dphy)

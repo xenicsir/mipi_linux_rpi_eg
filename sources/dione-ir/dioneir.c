@@ -55,8 +55,6 @@ static int quick_mode = 1;
 module_param(test_mode, int, 0644);
 module_param(quick_mode, int, 0644);
 
-s64 link_freq_menu_items[1];
-
 /* Array of all the mbus formats that we'll accept */
 u32 dione_ir_mbus_codes[] = {
    MEDIA_BUS_FMT_BGR888_1X24,
@@ -116,6 +114,7 @@ struct dione_ir {
 
 	u64				*link_frequencies;
 	unsigned int	link_frequencies_num;
+	s64				link_freq_menu_items[1];
 
    struct clk *clk;
    u32 def_clk_freq;
@@ -1649,7 +1648,7 @@ static int dione_ir_init_controls(struct dione_ir *dione_ir)
 
 	for (i = 0; i < dione_ir_ep_cfg.nr_of_link_frequencies; i++) {
 		input.link_frequency = dione_ir_ep_cfg.link_frequencies[i];
-      link_freq_menu_items[0] = input.link_frequency;
+      dione_ir->link_freq_menu_items[0] = input.link_frequency;
 		if (tc358746_calculate(&params, &input) == 0)
 			break;
 	}
@@ -1659,9 +1658,9 @@ static int dione_ir_init_controls(struct dione_ir *dione_ir)
 		return -EINVAL;
 	}
 
-   dev_info(dev, "Link frequency = %lld\n", link_freq_menu_items[0]);
+   dev_info(dev, "Link frequency = %lld\n", dione_ir->link_freq_menu_items[0]);
    ctrl = v4l2_ctrl_new_int_menu(ctrl_hdlr, &sensor_ctrl_ops, V4L2_CID_LINK_FREQ,
-                                0, 0, link_freq_menu_items);
+                                0, 0, dione_ir->link_freq_menu_items);
    // v4l2_ctrl_new_std(ctrl_hdlr, &sensor_ctrl_ops, V4L2_CID_LINK_FREQ,
          // input.link_frequency, input.link_frequency, 1, input.link_frequency);
 

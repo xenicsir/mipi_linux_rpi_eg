@@ -1,0 +1,19 @@
+diff --git a/cfe_fmts.h b/cfe_fmts.h
+index e192f21..711cb70 100644
+--- a/cfe_fmts.h
++++ b/cfe_fmts.h
+@@ -287,6 +287,14 @@ static const struct cfe_fmt formats[] = {
+ 		.flags = CFE_FORMAT_FLAG_FE_OUT,
+ 		.remap = { V4L2_PIX_FMT_Y16, V4L2_PIX_FMT_PISP_COMP1_MONO },
+ 	},
++	{
++		.fourcc = V4L2_PIX_FMT_Y16_BE,
++		.code = MEDIA_BUS_FMT_Y16_1X16,
++		.depth = 16,
++		.csi_dt = MIPI_CSI2_DT_RAW16,
++		.flags = CFE_FORMAT_FLAG_FE_OUT,
++		.remap = { V4L2_PIX_FMT_Y16_BE, V4L2_PIX_FMT_PISP_COMP1_MONO },
++	},
+ 	{
+ 		.fourcc = V4L2_PIX_FMT_PISP_COMP1_MONO,
+ 		.code = MEDIA_BUS_FMT_Y16_1X16,

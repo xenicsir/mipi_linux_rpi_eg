@@ -17,6 +17,16 @@ done
 # Build native patched modules for current kernel version on target only
 if [ $(grep -c Raspberry /proc/cpuinfo) -eq 1 ]
 then
+   if [[ $1 == "distclean" ]]
+   then
+      read -r -n 1 -p "Warning. Do you really want to git revert modified files in kernel_patches/ ? [y/N] " response
+      echo
+      if [[ "$response" != "y" && "$response" != "Y" ]]; then
+          echo "Canceled"
+          exit
+      fi
+   fi
+
    KERNEL_VERSION=$(uname -r | rev | cut -d '-' -f '2-' | rev)
    file=$(echo "kernel_patches/"$KERNEL_VERSION)
    if [[ -d $file ]]
@@ -83,7 +93,7 @@ then
          CONFIG_FILE="/boot/config.txt"
       fi
       echo Customize $CONFIG_FILE
-      if [ ! $(grep "dtoverlay=eg-ec-mipi" $CONFIG_FILE) ]
+      if ! grep -q "dtoverlay=eg-ec-mipi" $CONFIG_FILE
       then
          echo "# Uncomment the following line to enable EngineCore camera" | sudo tee -a $CONFIG_FILE
          echo "#dtoverlay=eg-ec-mipi" | sudo tee -a $CONFIG_FILE
@@ -92,17 +102,22 @@ then
          echo "# Uncomment the following line to modify the EngineCore I2C address. 0x16 by default." | sudo tee -a $CONFIG_FILE
          echo "#dtparam=i2c-addr=0x16" | sudo tee -a $CONFIG_FILE
       fi
-      if [ ! $(grep "dtoverlay=dione-ir" $CONFIG_FILE) ]
+      if ! grep -q "dtoverlay=dione-ir" $CONFIG_FILE
       then
          echo "# Uncomment the following line to enable Dione camera" | sudo tee -a $CONFIG_FILE
          echo "#dtoverlay=dione-ir" | sudo tee -a $CONFIG_FILE
       fi
-      if [ ! $(grep "dtoverlay=microlynx-mipi" $CONFIG_FILE) ]
-      then
-         echo "# Uncomment the following line to enable Microlynx camera." | sudo tee -a $CONFIG_FILE
-         echo "# Use line-height=128 for setting line height, minimum is 16 lines." | sudo tee -a $CONFIG_FILE
-         echo "#dtoverlay=microlynx-mipi,line-height=128" | sudo tee -a $CONFIG_FILE
-      fi
+#      if ! grep -q "dtoverlay=microlynx-mipi" $CONFIG_FILE
+#      then
+#         echo "# Uncomment the following line to enable Microlynx camera." | sudo tee -a $CONFIG_FILE
+#         echo "# Use line-height=128 for setting line height, minimum is 16 lines." | sudo tee -a $CONFIG_FILE
+#         echo "#dtoverlay=microlynx-mipi,line-height=128" | sudo tee -a $CONFIG_FILE
+#      fi
+#      if ! grep -q "dtoverlay=ilumos-mipi" $CONFIG_FILE
+#      then
+#         echo "# Uncomment the following line to enable iLumos camera." | sudo tee -a $CONFIG_FILE
+#         echo "#dtoverlay=ilumos-mipi" | sudo tee -a $CONFIG_FILE
+#      fi
 
    # Install rootfs scripts
    sudo rsync -iahHAXxvz --progress rootfs/ /
@@ -110,17 +125,9 @@ then
    fi
 fi
 
-if [[ $1 == "clean" ]]
+if [[ $1 == "clean" || $1 == "distclean" ]]
 then
    rm -rf linux_install
-   read -r -n 1 -p "Warning. Do you want to git revert modified files in kernel_patches/ ? [y/N] " response
-   echo
-   if [[ "$response" == "y" || "$response" == "Y" ]]; then
-       git ls-files --modified kernel_patches/ | xargs git restore
-       echo "Reverted kernel_patches."
-   else
-       echo "Cancel git revert kernel_patches."
-   fi
 
 fi
 

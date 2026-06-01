@@ -1,0 +1,19 @@
+--- a/pisp_be_formats.h	2026-05-29 10:55:27.858041385 +0200
++++ b/pisp_be_formats.h	2026-05-29 11:02:24.911544678 +0200
+@@ -582,6 +582,16 @@
+ 		.colorspace_default = V4L2_COLORSPACE_RAW,
+ 	},
+ 	{
++		.fourcc		= V4L2_PIX_FMT_Y16_BE,
++		.bit_depth	= 16,
++		.opt_align	= 32,
++		.min_align	= 16,
++		.plane_factor	= { P3(1.0) },
++		.num_planes	= 1,
++		.colorspace_mask    = V4L2_COLORSPACE_MASK_RAW,
++		.colorspace_default = V4L2_COLORSPACE_RAW,
++	},
++	{
+ 		.fourcc		= V4L2_PIX_FMT_PISP_COMP1_MONO,
+ 		.bit_depth	= 8,
+ 		.opt_align	= 32,

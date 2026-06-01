@@ -6,6 +6,8 @@
 /{
 	compatible = "brcm,bcm2835";
 
+	/* ===== CAM1 path (default, RPi4-compatible) ===== */
+
 	fragment@0 {
 		target = <&i2c0if>;
 		__overlay__ {
@@ -84,6 +86,7 @@
 		};
 	};
 
+	/* CAM1 data-lanes: 1-lane active by default, 2-lanes dormant */
 	fragment@5 {
 		target = <&csi_ep>;
 		__overlay__ {
@@ -112,8 +115,102 @@
 		};
 	};
 
+	/* ===== CAM0 path (dormant by default, RPi5 only) ===== */
+
+	fragment@10 {
+		target = <&cam0_clk>;
+		__dormant__ {
+			status = "okay";
+			clock-frequency = <100000000>;
+		};
+	};
+
+	fragment@11 {
+		target = <&i2c_csi_dsi0>;
+		__dormant__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "okay";
+
+			eg_ec_mipi_cam0: eg_ec_mipi@16 {
+				compatible = "xenics,eg-ec-mipi";
+				reg = <0x16>;
+				status = "okay";
+
+				clocks = <&cam0_clk>;
+				clock-names = "xclk";
+
+				VANA-supply = <&cam0_reg>;	/* 2.8v */
+				VDIG-supply = <&cam_dummy_reg>;	/* 1.8v */
+				VDDL-supply = <&cam_dummy_reg>;	/* 1.2v */
+
+				rotation = <180>;
+				orientation = <2>;
+
+				port {
+					eg_ec_mipi_cam0_0: endpoint {
+						remote-endpoint = <&csi0_ep>;
+						clock-lanes = <0>;
+						clock-noncontinuous;
+					};
+				};
+			};
+		};
+	};
+
+	fragment@12 {
+		target = <&csi0>;
+		__dormant__ {
+			status = "okay";
+			brcm,media-controller;
+
+			port {
+				csi0_ep: endpoint {
+					remote-endpoint = <&eg_ec_mipi_cam0_0>;
+					clock-lanes = <0>;
+					clock-noncontinuous;
+				};
+			};
+		};
+	};
+
+	/* CAM0 data-lanes: both dormant, cam0 activates 1-lane, 2lanes swaps to 2-lane */
+	fragment@13 {
+		target = <&csi0_ep>;
+		__dormant__ {
+			data-lanes = <1>;
+		};
+	};
+
+	fragment@14 {
+		target = <&csi0_ep>;
+		__dormant__ {
+			data-lanes = <1 2>;
+		};
+	};
+
+	fragment@15 {
+		target = <&eg_ec_mipi_cam0_0>;
+		__dormant__ {
+			data-lanes = <1>;
+		};
+	};
+
+	fragment@16 {
+		target = <&eg_ec_mipi_cam0_0>;
+		__dormant__ {
+			data-lanes = <1 2>;
+		};
+	};
+
 	__overrides__ {
-		2lanes = <0>, "-5+6-7+8";
-      i2c-addr = <&eg_ec_mipi>,"reg:0";
+		/* Switch all fragments to CAM0 path; deactivates i2c0if/mux (RPi4-only) */
+		cam0   = <0>, "-0-1-2-3-4-5-7+10+11+12+13+15";
+		/* Restore CAM1 path (symmetric inverse of cam0) */
+		cam1   = <0>, "+0+1+2+3+4+5+7-10-11-12-13-15";
+		/* Swap data-lanes on whichever port is active (harmless on the inactive port) */
+		2lanes = <0>, "-5+6-7+8-13+14-15+16";
+		i2c-addr = <&eg_ec_mipi>,"reg:0",
+		           <&eg_ec_mipi_cam0>,"reg:0";
 	};
 };

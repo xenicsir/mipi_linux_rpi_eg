@@ -34,18 +34,7 @@ The corresponding kernel headers are installed by default with Bookworm.
 ./build.sh make
 ./build.sh install
 </pre>
-- Customize /boot/firmware/config.txt :
-<pre>
-# Uncomment the following line to enable EngineCore camera
-#dtoverlay=eg-ec-mipi
-# Uncomment the following line for EngineCore 2 MIPI lanes. 1 lane by default.
-#dtparam=2lanes
-# Uncomment the following line to modify the EngineCore I2C address. 0x16 by default.
-#dtparam=i2c-addr=0x16
-# Uncomment the following line to enable Dione camera
-#dtoverlay=dione-ir
-</pre>
-
+- Configure the cameras — see [Camera configuration](#camera-configuration) section below
 - Reboot the RPi
 
 ### 2. Building MIPI driver for RPi OS Bullseye
@@ -107,18 +96,7 @@ $ uname -r
 
 #### Raspberry configuration
 
-- Customize /boot/config.txt :
-<pre>
-# Uncomment the following line to enable EngineCore camera
-#dtoverlay=eg-ec-mipi
-# Uncomment the following line for EngineCore with 2 MIPI lanes. 1 lane by default.
-#dtparam=2lanes
-# Uncomment the following line to modify the EngineCore I2C address. 0x16 by default.
-#dtparam=i2c-addr=0x16
-# Uncomment the following line to enable Dione camera
-#dtoverlay=dione-ir
-</pre>
-
+- Configure the cameras — see [Camera configuration](#camera-configuration) section below
 - Reboot the RPi
 
 Note : it is possible to clean the **sources** folder with this command
@@ -155,18 +133,7 @@ sudo apt install linux-headers-$(uname -r)
 ./build.sh make
 ./build.sh install
 </pre>
-- Customize /boot/firmware/config.txt :
-<pre>
-# Uncomment the following line to enable EngineCore camera
-#dtoverlay=eg-ec-mipi
-# Uncomment the following line for EngineCore 2 MIPI lanes. 1 lane by default.
-#dtparam=2lanes
-# Uncomment the following line to modify the EngineCore I2C address. 0x16 by default.
-#dtparam=i2c-addr=0x16
-# Uncomment the following line to enable Dione camera
-#dtoverlay=dione-ir
-</pre>
-
+- Configure the cameras — see [Camera configuration](#camera-configuration) section below
 - Reboot the RPi
 
 ### 4. Building MIPI driver and Linux from scratch for other RPI OS versions
@@ -183,6 +150,88 @@ popd
 
 **Note : code in "sources" folder may not compile because of incompatible Linux version**
 
+## Camera configuration
+
+Edit the config file before rebooting:
+- **Bookworm / Ubuntu:** `/boot/firmware/config.txt`
+- **Bullseye:** `/boot/config.txt`
+
+### RPi4 — single camera port
+
+The RPi4 has one CSI camera port. Connect the camera and enable the corresponding overlay.
+
+<pre>
+# EngineCore (eg-ec-mipi)
+dtoverlay=eg-ec-mipi
+# Optional: 2 MIPI lanes (1 lane by default)
+#dtparam=2lanes
+# Optional: I2C address (0x16 by default)
+#dtparam=i2c-addr=0x16
+
+# Dione IR
+#dtoverlay=dione-ir
+</pre>
+
+Only one `dtoverlay` should be active at a time on RPi4.
+
+### RPi5 — two camera ports (CAM0 and CAM1)
+
+The RPi5 has two independent CSI camera ports. Each port is selected with the `cam0` or `cam1` dtparam.
+The default (no `cam0`/`cam1` param) is CAM1, which preserves RPi4 compatibility.
+
+**Single camera on CAM1 (default):**
+<pre>
+dtoverlay=eg-ec-mipi
+</pre>
+
+**Single camera on CAM0:**
+<pre>
+dtoverlay=eg-ec-mipi,cam0
+</pre>
+
+**Two cameras of different types:**
+<pre>
+dtoverlay=eg-ec-mipi,cam0
+dtoverlay=dione-ir,cam1
+</pre>
+
+**Two cameras of the same type, one with 1 MIPI lane (MicroCube) on cam0, one with 2 MIPI lanes (Crius1280) on cam1:**
+<pre>
+dtoverlay=eg-ec-mipi,cam0
+dtoverlay=eg-ec-mipi,cam1,2lanes
+</pre>
+
+**Two Dione cameras:**
+<pre>
+dtoverlay=dione-ir,cam0
+dtoverlay=dione-ir,cam1
+</pre>
+
+**Available dtparam per overlay:**
+
+| Overlay | `cam0` | `cam1` | `2lanes` |
+|---------|--------|--------|----------|
+| eg-ec-mipi | ✓ | ✓ | ✓ |
+| dione-ir | ✓ | ✓ | |
+
 ## To grab video on the target
 
-Refer to sources/streaming_examples.txt file.
+**RPi4:** the video device is always `/dev/video0`.
+
+**RPi5:** the video device index depends on which ports are active and the driver probe order.
+Use the provided script to retrieve the video device and the associated I2C character device for each port:
+<pre>
+# CAM1 (default)
+$ eg_get_video_device_rpi5.sh
+/dev/video8
+/dev/eg-ec-i2c-11-0016
+
+# CAM0
+$ eg_get_video_device_rpi5.sh 0
+/dev/video16
+/dev/eg-ec-i2c-10-0016
+</pre>
+
+The script outputs two lines: the V4L2 capture device and the I2C character device exposed by the camera driver (used for direct register access).
+
+Refer to `sources/streaming_examples.txt` for capture and streaming commands.
