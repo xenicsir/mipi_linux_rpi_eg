@@ -127,7 +127,7 @@ RGB888 (BGR)
         ! video/x-raw,format=BGR,width=1280,height=1024 \
         ! videoconvert ! ximagesink sync=false
 
-  Bookworm, Ubuntu:
+  Bookworm, Trixie, Ubuntu:
     640x480:
       v4l2-ctl -d /dev/video0 --stream-mmap \
         --set-fmt-video=width=640,height=480,pixelformat="BGR3"
