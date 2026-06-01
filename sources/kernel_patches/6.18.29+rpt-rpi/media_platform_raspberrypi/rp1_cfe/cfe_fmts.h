@@ -288,14 +288,6 @@ static const struct cfe_fmt formats[] = {
 		.remap = { V4L2_PIX_FMT_Y16, V4L2_PIX_FMT_PISP_COMP1_MONO },
 	},
 	{
-		.fourcc = V4L2_PIX_FMT_Y16_BE,
-		.code = MEDIA_BUS_FMT_Y16_1X16,
-		.depth = 16,
-		.csi_dt = MIPI_CSI2_DT_RAW16,
-		.flags = CFE_FORMAT_FLAG_FE_OUT,
-		.remap = { V4L2_PIX_FMT_Y16_BE, V4L2_PIX_FMT_PISP_COMP1_MONO },
-	},
-	{
 		.fourcc = V4L2_PIX_FMT_PISP_COMP1_MONO,
 		.code = MEDIA_BUS_FMT_Y16_1X16,
 		.depth = 8,

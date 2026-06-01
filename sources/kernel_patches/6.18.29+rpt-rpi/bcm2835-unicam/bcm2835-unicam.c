@@ -463,12 +463,6 @@ static const struct unicam_fmt formats[] = {
 		.depth		= 16,
 		.csi_dt		= MIPI_CSI2_DT_RAW16,
 		.valid_colorspaces = MASK_CS_RAW,
-	}, {
-		.fourcc		= V4L2_PIX_FMT_Y16_BE,
-		.code		= MEDIA_BUS_FMT_Y16_1X16,
-		.depth		= 16,
-		.csi_dt		= MIPI_CSI2_DT_RAW16,
-		.valid_colorspaces = MASK_CS_RAW,
 	},
 	/* Embedded data format */
 	{
@@ -2159,9 +2153,10 @@ static int unicam_mc_video_link_validate(struct media_link *link)
 			return -EINVAL;
 		}
 
-		fmt = find_format_by_pix(unicam, pix_fmt->pixelformat);
+		fmt = find_format_by_code(source_fmt.format.code);
 
-		if (!fmt || fmt->code != source_fmt.format.code)
+		if (!fmt || (fmt->fourcc != pix_fmt->pixelformat &&
+			     fmt->repacked_fourcc != pix_fmt->pixelformat))
 			return -EINVAL;
 	} else {
 		struct v4l2_meta_format *meta_fmt = &node->v_fmt.fmt.meta;
