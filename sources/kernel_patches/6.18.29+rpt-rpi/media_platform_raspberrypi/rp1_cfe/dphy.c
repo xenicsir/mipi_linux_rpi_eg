@@ -2,36 +2,50 @@
 /*
  * RP1 CSI-2 Driver
  *
- * Copyright (c) 2021-2024 Raspberry Pi Ltd.
- * Copyright (c) 2023-2024 Ideas on Board Oy
+ * Copyright (C) 2021 - Raspberry Pi Ltd.
+ *
  */
 
 #include <linux/delay.h>
+#include <linux/dev_printk.h>
 #include <linux/pm_runtime.h>
 
 #include "dphy.h"
 
-#define dphy_dbg(dphy, fmt, arg...) dev_dbg((dphy)->dev, fmt, ##arg)
-#define dphy_err(dphy, fmt, arg...) dev_err((dphy)->dev, fmt, ##arg)
+#define dphy_dbg(fmt, arg...) dev_dbg(dphy->dev, fmt, ##arg)
+#define dphy_info(fmt, arg...) dev_info(dphy->dev, fmt, ##arg)
+#define dphy_err(fmt, arg...) dev_err(dphy->dev, fmt, ##arg)
 
-/* DW dphy Host registers */
-#define DPHY_VERSION		0x000
-#define DPHY_N_LANES		0x004
-#define DPHY_RESETN		0x008
-#define DPHY_PHY_SHUTDOWNZ	0x040
-#define DPHY_PHY_RSTZ		0x044
-#define DPHY_PHY_RX		0x048
-#define	DPHY_PHY_STOPSTATE	0x04c
-#define DPHY_PHY_TST_CTRL0	0x050
-#define DPHY_PHY_TST_CTRL1	0x054
-#define DPHY_PHY2_TST_CTRL0	0x058
-#define DPHY_PHY2_TST_CTRL1	0x05c
+/* DW CSI-2 Host registers */
+#define VERSION		0x000
+#define N_LANES		0x004
+#define RESETN		0x008
+#define PHY_SHUTDOWNZ	0x040
+#define PHY_RSTZ	0x044
+#define PHY_RX		0x048
+#define	PHY_STOPSTATE	0x04c
+#define PHY_TST_CTRL0	0x050
+#define PHY_TST_CTRL1	0x054
+#define PHY2_TST_CTRL0	0x058
+#define PHY2_TST_CTRL1	0x05c
 
-/* DW dphy Host Transactions */
+/* DW CSI-2 Host and PHY debug registers */
+#define INT_ST_PHY_FATAL   0x0e0
+#define INT_ST_PKT_FATAL   0x0f0
+#define INT_ST_FRAME_FATAL 0x100
+#define INT_ST_PHY         0x110
+#define INT_ST_PKT         0x120
+
+/* DW D-PHY transaction codes */
 #define DPHY_HS_RX_CTRL_LANE0_OFFSET	0x44
 #define DPHY_PLL_INPUT_DIV_OFFSET	0x17
 #define DPHY_PLL_LOOP_DIV_OFFSET	0x18
 #define DPHY_PLL_DIV_CTRL_OFFSET	0x19
+#define DPHY_CLK_PN_SWAP		0x35
+#define DPHY_D0_PN_SWAP			0x45
+#define DPHY_D1_PN_SWAP			0x55
+#define DPHY_D2_PN_SWAP			0x85
+#define DPHY_D3_PN_SWAP			0x95
 
 static u32 dw_csi2_host_read(struct dphy_data *dphy, u32 offset)
 {
@@ -45,38 +59,38 @@ static void dw_csi2_host_write(struct dphy_data *dphy, u32 offset, u32 data)
 
 static void set_tstclr(struct dphy_data *dphy, u32 val)
 {
-	u32 ctrl0 = dw_csi2_host_read(dphy, DPHY_PHY_TST_CTRL0);
+	u32 ctrl0 = dw_csi2_host_read(dphy, PHY_TST_CTRL0);
 
-	dw_csi2_host_write(dphy, DPHY_PHY_TST_CTRL0, (ctrl0 & ~1) | val);
+	dw_csi2_host_write(dphy, PHY_TST_CTRL0, (ctrl0 & ~1) | val);
 }
 
 static void set_tstclk(struct dphy_data *dphy, u32 val)
 {
-	u32 ctrl0 = dw_csi2_host_read(dphy, DPHY_PHY_TST_CTRL0);
+	u32 ctrl0 = dw_csi2_host_read(dphy, PHY_TST_CTRL0);
 
-	dw_csi2_host_write(dphy, DPHY_PHY_TST_CTRL0, (ctrl0 & ~2) | (val << 1));
+	dw_csi2_host_write(dphy, PHY_TST_CTRL0, (ctrl0 & ~2) | (val << 1));
 }
 
 static uint8_t get_tstdout(struct dphy_data *dphy)
 {
-	u32 ctrl1 = dw_csi2_host_read(dphy, DPHY_PHY_TST_CTRL1);
+	u32 ctrl1 = dw_csi2_host_read(dphy, PHY_TST_CTRL1);
 
 	return ((ctrl1 >> 8) & 0xff);
 }
 
 static void set_testen(struct dphy_data *dphy, u32 val)
 {
-	u32 ctrl1 = dw_csi2_host_read(dphy, DPHY_PHY_TST_CTRL1);
+	u32 ctrl1 = dw_csi2_host_read(dphy, PHY_TST_CTRL1);
 
-	dw_csi2_host_write(dphy, DPHY_PHY_TST_CTRL1,
+	dw_csi2_host_write(dphy, PHY_TST_CTRL1,
 			   (ctrl1 & ~(1 << 16)) | (val << 16));
 }
 
 static void set_testdin(struct dphy_data *dphy, u32 val)
 {
-	u32 ctrl1 = dw_csi2_host_read(dphy, DPHY_PHY_TST_CTRL1);
+	u32 ctrl1 = dw_csi2_host_read(dphy, PHY_TST_CTRL1);
 
-	dw_csi2_host_write(dphy, DPHY_PHY_TST_CTRL1, (ctrl1 & ~0xff) | val);
+	dw_csi2_host_write(dphy, PHY_TST_CTRL1, (ctrl1 & ~0xff) | val);
 }
 
 static uint8_t dphy_transaction(struct dphy_data *dphy, u8 test_code,
@@ -115,7 +129,7 @@ static void dphy_set_hsfreqrange(struct dphy_data *dphy, uint32_t mbps)
 	unsigned int i;
 
 	if (mbps < 80 || mbps > 1500)
-		dphy_err(dphy, "DPHY: Datarate %u Mbps out of range\n", mbps);
+		dphy_err("DPHY: Datarate %u Mbps out of range\n", mbps);
 
 	for (i = 0; i < ARRAY_SIZE(hsfreqrange_table) - 1; i++) {
 		if (mbps <= hsfreqrange_table[i][0])
@@ -128,8 +142,8 @@ static void dphy_set_hsfreqrange(struct dphy_data *dphy, uint32_t mbps)
 
 static void dphy_init(struct dphy_data *dphy)
 {
-	dw_csi2_host_write(dphy, DPHY_PHY_RSTZ, 0);
-	dw_csi2_host_write(dphy, DPHY_PHY_SHUTDOWNZ, 0);
+	dw_csi2_host_write(dphy, PHY_RSTZ, 0);
+	dw_csi2_host_write(dphy, PHY_SHUTDOWNZ, 0);
 	set_tstclk(dphy, 1);
 	set_testen(dphy, 0);
 	set_tstclr(dphy, 1);
@@ -139,43 +153,86 @@ static void dphy_init(struct dphy_data *dphy)
 
 	dphy_set_hsfreqrange(dphy, dphy->dphy_rate);
 
+	dphy_transaction(dphy, DPHY_CLK_PN_SWAP, dphy->lane_polarities[0]);
+	dphy_transaction(dphy, DPHY_D0_PN_SWAP, dphy->lane_polarities[1]);
+	dphy_transaction(dphy, DPHY_D1_PN_SWAP, dphy->lane_polarities[2]);
+	dphy_transaction(dphy, DPHY_D2_PN_SWAP, dphy->lane_polarities[3]);
+	dphy_transaction(dphy, DPHY_D3_PN_SWAP, dphy->lane_polarities[4]);
+
 	usleep_range(5, 10);
-	dw_csi2_host_write(dphy, DPHY_PHY_SHUTDOWNZ, 1);
+	dw_csi2_host_write(dphy, PHY_SHUTDOWNZ, 1);
 	usleep_range(5, 10);
-	dw_csi2_host_write(dphy, DPHY_PHY_RSTZ, 1);
+	dw_csi2_host_write(dphy, PHY_RSTZ, 1);
 }
 
 void dphy_start(struct dphy_data *dphy)
 {
-	dphy_dbg(dphy, "%s: Link rate %u Mbps, %u data lanes\n", __func__,
-		 dphy->dphy_rate, dphy->active_lanes);
-
-	dw_csi2_host_write(dphy, DPHY_N_LANES, (dphy->active_lanes - 1));
+	dw_csi2_host_write(dphy, RESETN, 0);
+	dw_csi2_host_write(dphy, N_LANES, (dphy->active_lanes - 1));
 	dphy_init(dphy);
-	dw_csi2_host_write(dphy, DPHY_RESETN, 0xffffffff);
+	dw_csi2_host_write(dphy, RESETN, 0xffffffff);
 	usleep_range(10, 50);
 }
 
 void dphy_stop(struct dphy_data *dphy)
 {
-	dphy_dbg(dphy, "%s\n", __func__);
-
-	/* Set only one lane (lane 0) as active (ON) */
-	dw_csi2_host_write(dphy, DPHY_N_LANES, 0);
-	dw_csi2_host_write(dphy, DPHY_RESETN, 0);
+	/*
+	 * We no longer go into reset here, because the camera might still be
+	 * streaming. If we kill the CSI-2 Host in mid-packet, it can leave the
+	 * IDI interface in a bad state, causing the next packet to be lost.
+	 *
+	 * XXX Is it safe to assume it will be idle before the next dphy_start?
+	 * XXX What happens if the camera itself generates an incomplete packet?
+	 *
+	 * TODO: Instead, should we consider resetting the *entire* MIPI block
+	 * (including CSI2AXI and ISP-FE)? That can't safely be done until
+	 * all AXI traffic has completed. It would cause APB access to hang.
+	 */
 }
 
-void dphy_probe(struct dphy_data *dphy)
+static int dphy_debug_show(struct seq_file *s, void *data)
+{
+	/*
+	 * Here we expose various error flags in the CSI-2 Host and PHY.
+	 * All these registers apart from PHY_STOPSTATE are read-to-clear.
+	 * The only reliable way to count errors would be to service a
+	 * dedicated interrupt. For now, we'll just read (and clear) them.
+	 */
+	struct dphy_data *dphy = s->private;
+	int ret;
+
+	ret = pm_runtime_resume_and_get(dphy->dev);
+	if (ret)
+		return ret;
+
+#define DUMP(reg) seq_printf(s, #reg " \t0x%08x\n", dw_csi2_host_read(dphy, reg))
+	DUMP(PHY_STOPSTATE);      /* Data lane (bits 0-3) or clock (bit 16) is in stopstate */
+	DUMP(INT_ST_PHY_FATAL);   /* HS start sync error for each data lane (bits 0-3) */
+	DUMP(INT_ST_PKT_FATAL);   /* CRC error on VC (bits 0-3); ECC unrecoverable error (bit 16) */
+	DUMP(INT_ST_FRAME_FATAL); /* FS/FE mismatch (bits 0-3), seq (8-11), CRC error (16-19) */
+	DUMP(INT_ST_PHY);         /* Non-fatal error for each data lane HS (bits 0-3), LP (16-19) */
+	DUMP(INT_ST_PKT);         /* Unknown DT on VC (bits 0-3); ECC corrected error (b16-19) */
+#undef DUMP
+
+	pm_runtime_put(dphy->dev);
+	return 0;
+}
+
+DEFINE_SHOW_ATTRIBUTE(dphy_debug);
+
+void dphy_probe(struct dphy_data *dphy, struct dentry *debugfs)
 {
 	u32 host_ver;
 	u8 host_ver_major, host_ver_minor;
 
-	host_ver = dw_csi2_host_read(dphy, DPHY_VERSION);
+	host_ver = dw_csi2_host_read(dphy, VERSION);
 	host_ver_major = (u8)((host_ver >> 24) - '0');
 	host_ver_minor = (u8)((host_ver >> 16) - '0');
 	host_ver_minor = host_ver_minor * 10;
 	host_ver_minor += (u8)((host_ver >> 8) - '0');
 
-	dphy_dbg(dphy, "DW dphy Host HW v%u.%u\n", host_ver_major,
-		 host_ver_minor);
+	dphy_info("DW dphy Host HW v%u.%u\n", host_ver_major, host_ver_minor);
+
+	if (debugfs)
+		debugfs_create_file("dphy_debug", 0444, debugfs, dphy, &dphy_debug_fops);
 }
