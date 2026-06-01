@@ -26,14 +26,13 @@
  
  	if (mbps < 80 || mbps > 1500)
  		dphy_err("DPHY: Datarate %u Mbps out of range\n", mbps);
-@@ -124,8 +134,11 @@
+@@ -124,8 +134,10 @@
  			break;
  	}
  
 -	dphy_transaction(dphy, DPHY_HS_RX_CTRL_LANE0_OFFSET,
 -			 hsfreqrange_table[i][1] << 1);
-+	/* bit 0 = settle_bypass: skip T_HS-SETTLE, sync immediately after LP->HS */
-+	hsfreq = (hsfreqrange_table[i][1] << 1) | 1;
++	hsfreq = hsfreqrange_table[i][1] << 1;
 +	for (lane = 0; lane < dphy->active_lanes &&
 +			lane < ARRAY_SIZE(lane_offsets); lane++)
 +		dphy_transaction(dphy, lane_offsets[lane], hsfreq);
