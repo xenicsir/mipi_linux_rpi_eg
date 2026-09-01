@@ -321,11 +321,12 @@ for label, off in [("OVERFLOW",   CSI2_DISCARDS_OVERFLOW),
     cnt = v & 0xffffff
     dt  = (v >> 24) & 0x3f
     vc  = (v >> 30) & 0x3
-    if cnt:
-        dt_name = DT_NAMES.get(dt, f"0x{dt:02x}")
-        print(f"  [!] {label:<12s}: count={cnt}  last DT={dt_name}  VC={vc}  *** ERROR ***")
-    else:
-        print(f"  [ok] {label:<12s}: 0")
+    # Cumulative since boot. Non-zero here is NOT a fault -- a healthy Dione
+    # capture shows INACTIVE in the millions. See the COUNTERS section below,
+    # which measures whether any of these is still moving during the capture:
+    # that is the only reading that means something.
+    dt_name = DT_NAMES.get(dt, f"0x{dt:02x}") if cnt else "-"
+    print(f"  [i] {label:<12s}: count={cnt}  last DT={dt_name}  VC={vc}")
 
 # ── Per-channel decode ────────────────────────────────────────────────────────
 for ch in range(4):
@@ -363,7 +364,11 @@ for ch in range(4):
     print()
     print(f"  DMA addr    : 0x{((addr1 << 32) | addr0) << 4:012x}")
     print(f"  Frames rcvd : {frames}")
-    print(f"  Current line: {lines}" + (f" / {lc}" if lc else ""))
+    # free-running counter, not a position within the current frame: it is
+    # routinely far above the frame height. Labelled so it does not read as a
+    # geometry error.
+    print(f"  Line counter: {lines}  (free-running)"
+          + (f" / {lc}" if lc else ""))
     irqs = []
     if ctrl & IRQ_EN_FS:    irqs.append("FS")
     if ctrl & IRQ_EN_FE:    irqs.append("FE")
@@ -390,17 +395,34 @@ print(f"  PHY_RSTZ    : {rd_dphy(DPHY_RSTZ) & 1}  (1 = out of reset)")
 
 phy_rx   = rd_dphy(DPHY_PHY_RX)
 stopstate = rd_dphy(DPHY_STOPSTATE)
-print(f"  PHY_RX      : 0x{phy_rx:08x}  "
-      f"rxclkactivehs={bit(phy_rx,0)}  rxulpsclknot={bit(phy_rx,1)}")
+# PHY_RX: the meaningful bits are [17:16], not [1:0] -- decoding bit0/bit1
+# printed "rxclkactivehs=0" on a perfectly working capture, which read as a
+# fault. Measured 0x00030000 on a 2-lane Dione BOTH while streaming and with
+# the stream stopped, so whatever these bits are, they are NOT an activity
+# indicator: do not read liveness from them. The activity test is the
+# STOPSTATE sampling below.
+print(f"  PHY_RX      : 0x{phy_rx:08x}   bits[17:16]="
+      f"{(phy_rx >> 16) & 0x3:02b}  (static, not an activity indicator)")
 stop0 = bit(stopstate, 0)
 stop1 = bit(stopstate, 1)
 stopc = bit(stopstate, 16)
 print(f"  PHY_STOPSTATE: 0x{stopstate:08x}")
 print(f"    lane0 stop={stop0}  lane1 stop={stop1}  clock stop={stopc}")
-if stop0 and stop1:
-    print(f"    → both data lanes in LP-11 (stop state) : no HS burst in progress")
-elif not stop0 and not stop1:
-    print(f"    → data lanes active (HS or LP transition)")
+# A single sample says almost nothing: with a non-continuous clock (the Dione)
+# the lanes drop back to LP-11 between every line, so an asynchronous read
+# lands in that gap most of the time. Sample repeatedly and report whether HS
+# bursts happen at all.
+hs_seen = 0
+for _ in range(2000):
+    s = rd_dphy(DPHY_STOPSTATE)
+    if not (s & 0x3):
+        hs_seen += 1
+print(f"    sampled 2000x: {hs_seen} reads with a lane out of stop")
+if hs_seen:
+    print("    → HS bursts observed: the camera is transmitting"
+          " (LP-11 in between is normal with a non-continuous clock)")
+else:
+    print("    → never left LP-11 during sampling")
 
 # ── MIPICFG ──────────────────────────────────────────────────────────────────
 sep("MIPICFG")
@@ -425,24 +447,42 @@ print(f"  STATUS      : 0x{fe_sta:08x}")
 print(f"  FRAME_STATUS: 0x{fe_fsta:08x}")
 
 # ── Errors & Diagnosis ───────────────────────────────────────────────────────
-sep("ERROR SUMMARY")
-errors = []
-panics_lo = rc(CSI2_LLEV_PANICS)
-panics_hi = rc(CSI2_ULEV_PANICS)
-if panics_lo: errors.append(f"LLEV_PANICS = {panics_lo}  (low-level DMA back-pressure)")
-if panics_hi: errors.append(f"ULEV_PANICS = {panics_hi}  (upper-level DMA back-pressure)")
-for label, off in [("DISCARDS_OVERFLOW",  CSI2_DISCARDS_OVERFLOW),
-                   ("DISCARDS_INACTIVE",  CSI2_DISCARDS_INACTIVE),
-                   ("DISCARDS_UNMATCHED", CSI2_DISCARDS_UNMATCHED),
-                   ("DISCARDS_LEN_LIMIT", CSI2_DISCARDS_LEN_LIMIT)]:
-    cnt = rc(off) & 0xffffff
-    if cnt:
-        errors.append(f"{label} = {cnt}")
-if errors:
-    for e in errors:
-        print(f"  [ERR] {e}")
-else:
-    print("  No error counters set")
+sep("COUNTERS")
+# These are cumulative since boot, and a perfectly healthy board carries large
+# values: measured on a working Dione 1280 capture, DISCARDS_INACTIVE was 8.7M,
+# UNMATCHED 1041, LEN_LIMIT 30, with clean images and a steady frame rate.
+# Reporting a non-zero absolute value as an error was a false alarm every time.
+# What matters is whether a counter is STILL MOVING while frames arrive.
+COUNTERS = [("LLEV_PANICS",       CSI2_LLEV_PANICS,        0xffffffff),
+            ("ULEV_PANICS",       CSI2_ULEV_PANICS,        0xffffffff),
+            ("DISCARDS_OVERFLOW", CSI2_DISCARDS_OVERFLOW,  0xffffff),
+            ("DISCARDS_INACTIVE", CSI2_DISCARDS_INACTIVE,  0xffffff),
+            ("DISCARDS_UNMATCHED",CSI2_DISCARDS_UNMATCHED, 0xffffff),
+            ("DISCARDS_LEN_LIMIT",CSI2_DISCARDS_LEN_LIMIT, 0xffffff)]
+
+SETTLE = 1.0
+for i, a in enumerate(sys.argv):
+    if a == "--settle" and i + 1 < len(sys.argv):
+        SETTLE = float(sys.argv[i + 1])
+
+before = {n: rc(o) & m for n, o, m in COUNTERS}
+frames_before = rc(CSI2_CH_DEBUG(0)) >> 16
+time.sleep(SETTLE)
+after = {n: rc(o) & m for n, o, m in COUNTERS}
+frames_after = rc(CSI2_CH_DEBUG(0)) >> 16
+frames_delta = (frames_after - frames_before) & 0xffff
+
+print(f"  measured over {SETTLE:.1f} s   frames +{frames_delta}")
+print()
+moving = []
+for n, _, _ in COUNTERS:
+    d = after[n] - before[n]
+    if d:
+        moving.append((n, d))
+        print(f"  [ERR] {n:<20s} {after[n]:>10d}   +{d} during capture")
+    else:
+        print(f"  [i]   {n:<20s} {after[n]:>10d}   stable (cumulative since boot)")
+errors = [f"{n} +{d}" for n, d in moving]
 
 sep("DIAGNOSIS")
 ch0_ctrl   = rc(CSI2_CH_CTRL(0))
@@ -466,16 +506,20 @@ else:
             print("      No discards.  PHY may not be receiving any MIPI packets.")
             print("      Check: camera powered? I2C init succeeded? MIPI lanes connected?")
     else:
-        print(f"  [ok] CH0 is capturing.  Frames received: {ch0_frames}")
-        if not errors:
-            print("  [ok] No errors.")
+        print(f"  [ok] CH0 is capturing.  Frames received: {ch0_frames}"
+              f"  (+{frames_delta} during the {SETTLE:.1f} s measurement)")
+        if frames_delta == 0:
+            print("  [!] Frame counter did not move: the stream is stalled.")
+        if errors:
+            print(f"  [!] Counters still moving during capture: {', '.join(errors)}")
+        else:
+            print("  [ok] No counter moved during capture.")
 
-stop_d = rd_dphy(DPHY_STOPSTATE)
-if stop_d & 0x3:
-    if not (ch0_ctrl & DMA_EN):
-        print("  [i] PHY data lanes in stop (LP-11): consistent with DMA inactive.")
-    else:
-        print("  [!] PHY data lanes in stop (LP-11) while DMA is active.")
-        print("      Camera is not sending HS data.  Check camera streaming state.")
+# The stop-state check is only meaningful against the sampling done above:
+# with a non-continuous clock, lanes sit in LP-11 between lines, so a single
+# read finding them stopped means nothing.
+if (ch0_ctrl & DMA_EN) and not hs_seen and frames_delta == 0:
+    print("  [!] Data lanes never left LP-11 and no frame arrived.")
+    print("      The camera is not transmitting.  Check its streaming state.")
 
 sep()
