@@ -6,8 +6,14 @@ dioneCtrl.py - Xenics Dione Camera Control Module
 Overview
 --------
 Python module for controlling Xenics Dione thermal cameras via I2C (Linux)
-or USB/Serial (Windows). Supports both direct register access and the
-GenCP (Generic Camera Protocol) standard.
+or USB/Serial (Windows).
+
+Two wire protocols are implemented. The plain register protocol (4-byte
+address, 2-byte length, both little endian) is what the Dione speaks on
+I2C -- it is the default, and it is all that is needed, upload included.
+GenCP framing is available on the USB/Serial path, where the CX3
+converter acts as a GenCP server; the Dione itself does not serve GenCP
+over I2C, so gencp_enable is for the serial path only.
 
 Requirements
 ------------
@@ -15,6 +21,7 @@ Requirements
 - Dependencies: pyserial, numpy
 
     pip install pyserial numpy
+or  sudo apt install python3-serial
 
 Installation
 ------------
@@ -36,7 +43,15 @@ Constructor Parameters
     dev_addr     : int   (default: 0x5a)   - I2C device address (depends on camera model)
     com_device   : str   (default: "COM0") - Serial port (Windows only, e.g., "COM20")
     device_type  : str   (default: "I2C")  - Communication type: "I2C" or "USB"
-    gencp_enable : bool  (default: False)  - Enable GenCP protocol
+    gencp_enable : bool  (default: False)  - Use GenCP framing. USB/Serial only: the
+                                             Dione does not serve GenCP over I2C.
+    force_slave  : bool  (default: False)  - Use I2C_SLAVE_FORCE (0x0706) instead of
+                                             I2C_SLAVE (0x0703). Required when a kernel
+                                             driver (e.g. dione_ir) already holds the
+                                             I2C address; otherwise ioctl returns EBUSY.
+                                             Prefer unbinding the driver for an upload:
+                                             the camera handles one request at a time,
+                                             and the driver would be polling in parallel.
 
 Note: On Windows, device_type is automatically set to "USB".
 
@@ -55,10 +70,56 @@ Writing Registers:
     write_reg32f(reg_addr, val) Write a 32-bit float
     write_buf(reg_addr, buf)    Write a byte buffer
 
+Command line
+------------
+Running the script with no command opens an interactive console. With a
+command, it runs it and exits:
+
+    python dioneCtrl.py [connection options] <command> [connection options]
+
+    upload       <file.bin> firmware|application
+    read_reg32   <addr>              Read 32-bit integer
+    read_reg32f  <addr>              Read 32-bit float
+    write_reg32  <addr> <val>        Write 32-bit integer
+    write_reg32f <addr> <val>        Write 32-bit float
+    read_buf     <addr> <length>     Read byte buffer (hex + ASCII)
+    read_string  <addr> <length>     Read byte buffer as text
+
+    Connection options carry the same names as the constructor parameters
+    above, and may be given before or after the command:
+
+        --bus N            (default: 6)
+        --dev-addr 0xNN    (default: 0x5A)   -- not --addr, see below
+        --device-type I2C|USB               --com-device COMx
+        --gencp-enable                      --force-slave
+
+    upload file type choices:
+        firmware      Upload as FAC_SEL.FIRMWARE    (selector = 1)
+        application   Upload as FAC_SEL.APPLICATION (selector = 2)
+
+    Upload works over plain I2C; do not pass --gencp-enable for it.
+
+        python dioneCtrl.py upload app.bin application \\
+                            --device-type I2C --bus 9 --dev-addr 0x5a
+
+    The camera address option is --dev-addr, never --addr: every register
+    subcommand takes a positional 'addr', both would land on the same
+    namespace attribute, and the register address would reach the
+    I2C_SLAVE ioctl. Passing --addr reports this instead of failing.
+
+Firmware Upload (programmatic)
+-------------------------------
+
+    from dioneCtrl import dioneCtrl
+
+    cam = dioneCtrl(bus=10, dev_addr=0x5A, device_type="I2C")
+    cam.upload_file("myfile.bin", "application")
+
 Examples
 --------
-    # Read image width
-    width = cam.read_reg32(0x20001004)
+    # Read image width and height
+    width  = cam.read_reg32(0x20001000)
+    height = cam.read_reg32(0x20001004)
 
     # Read temperature
     temp = cam.read_reg32f(0x2f030)
@@ -67,8 +128,11 @@ Examples
     data = cam.read_buf(0x00000144, 64)
     serial = data[2:].decode('utf-8').rstrip('\\x00')  # Skip 2-byte header
 
-    # Set integration time to 33333 us
+    # Cap the frame period at 33333 us -> at most 30 fps
     cam.write_reg32(0x00080118, 33333)
+
+    # Set the exposure time to 60 us
+    cam.write_reg32f(0x0002F00C, 60.0)
 
     # Set GSK (Gain Signal Knee) to 1.8
     cam.write_reg32f(0x0002F004, 1.8)
@@ -80,14 +144,18 @@ Some Register Addresses
 -----------------------
     Address      Type    Description
     0x00000144   buffer  Serial number (64 bytes)
-    0x20001004   int     Image width
-    0x00080118   int     Integration time (us)
+    0x20001000   int     Image width
+    0x20001004   int     Image height
+    0x00080118   int     AcquisitionFrameTime (us) -- an upper bound on the
+                         frame period, not the exposure. 0 = free-running.
+    0x0002F00C   float   ExposureTime (us) -- this is the integration time
     0x0002F004   float   GSK (Gain Signal Knee)
     0x0002F030   float   Temperature
 
 GenCP Status Codes
 ------------------
-When using GenCP protocol, operations return a status string:
+A failed read raises CameraError, quoting the status word below; a write
+returns it (0 = success). The same codes are used by both protocols:
 
     GENCP_SUCCESS           Operation successful
     GENCP_NOT_IMPLEMENTED   Feature not implemented
@@ -109,15 +177,16 @@ Complete Example
 
     # Read camera information
     serial = cam.read_buf(0x00000144, 64)[2:].decode('utf-8').rstrip('\\x00')
-    width = cam.read_reg32(0x20001004)
+    width  = cam.read_reg32(0x20001000)
+    height = cam.read_reg32(0x20001004)
     temp = cam.read_reg32f(0x2f030)
 
     print(f"Camera Serial: {serial}")
-    print(f"Image Width: {width}")
+    print(f"Image size: {width}x{height}")
     print(f"Temperature: {temp:.2f} C")
 
     # Configure camera
-    cam.write_reg32(0x00080118, 33333)    # Set integration time
+    cam.write_reg32(0x00080118, 33333)    # Cap the frame period (30 fps)
     cam.write_reg32f(0x0002F004, 1.8)     # Set GSK
 
 Platform Notes
@@ -125,8 +194,11 @@ Platform Notes
 - Linux: Requires access to /dev/i2c-* devices. Run with appropriate
   permissions or add user to i2c group.
 - Windows: Requires COM port access. Install appropriate USB-Serial drivers.
-- I2C Address: Typical values are 0x5a or 0x5b depending on camera model.
+- I2C Address: one per model -- Dione 320 = 0x5c, 640 = 0x5a, 1024 = 0x5d,
+  1280 = 0x5b (user manual ENG-2021-UMN008-R013). The default here is 0x5a.
 - I2C Bus: Depends on the camera port on Jetson/RPi (check with i2cdetect).
+  If the dione_ir driver is loaded, the bus and address are both in the name
+  of the node it creates: /dev/dioneir-i2c-<bus>-000e-<address>.
 """
 
 import platform
@@ -138,28 +210,55 @@ import time
 import serial
 import numpy as np
 import ctypes
+from enum import IntEnum, unique
 
-#IOCTL_I2C_SLAVE=0x0703 # don't force
-IOCTL_I2C_SLAVE=0x0706  # force access
-IOCTL_I2C_TIMEOUT=0x0702
+IOCTL_I2C_SLAVE       = 0x0703
+IOCTL_I2C_SLAVE_FORCE = 0x0706   # use when kernel driver holds the I2C address
+IOCTL_I2C_TIMEOUT     = 0x0702
 
 GencpStatus = {
-               'GENCP_SUCCESS':0x0000,
-               'GENCP_NOT_IMPLEMENTED':0x8001,
-               'GENCP_INVALID_PARAMETER':0x8002,
-               'GENCP_INVALID_ADDRESS':0x8003,
-               'GENCP_WRITE_PROTECT':0x8004,
-               'GENCP_BAD_ALIGNEMENT':0x8005,
-               'GENCP_ACCESS_DENIED':0x8006,
-               'GENCP_BUSY':0x8007,
-               'GENCP_MSG TIMEOUT':0x800B,
-               'GENCP_INVALID_HEADER':0x800E,
-               'GENCP_WRONG_CONFIG':0x800F,
-               'GENCP_ERROR':0x8FFF}
+               'GENCP_SUCCESS':           0x0000,
+               'GENCP_NOT_IMPLEMENTED':   0x8001,
+               'GENCP_INVALID_PARAMETER': 0x8002,
+               'GENCP_INVALID_ADDRESS':   0x8003,
+               'GENCP_WRITE_PROTECT':     0x8004,
+               'GENCP_BAD_ALIGNEMENT':    0x8005,
+               'GENCP_ACCESS_DENIED':     0x8006,
+               'GENCP_BUSY':              0x8007,
+               'GENCP_MSG TIMEOUT':       0x800B,
+               'GENCP_INVALID_HEADER':    0x800E,
+               'GENCP_WRONG_CONFIG':      0x800F,
+               'GENCP_ERROR':             0x8FFF}
+
+@unique
+class FAC_SEL(IntEnum):
+    RECOVERY    = 0
+    FIRMWARE    = 1
+    APPLICATION = 2
+    CORRECTION  = 3
+
+    def __str__(self):
+        return self.name
+
+
+class CameraError(Exception):
+  """The camera answered and refused the request.
+
+  Distinct from OSError, which means the transport itself failed (no such bus,
+  address rejected, permission denied). IOError is not usable here: in Python 3
+  it is an alias of OSError, so the two cases could not be told apart."""
+
 
 class dioneCtrl(object):
 
-  def __init__(self, bus=6, dev_addr=0x5a, com_device="COM0", device_type="I2C", gencp_enable=False):
+  # Maximum I2C status read attempts when the camera returns 0xFFFF (request in progress)
+  POLL_ATTEMPTS = 10
+  POLL_INTERVAL = 0.05   # seconds between retry attempts
+
+  UPLOAD_BLOCKSIZE = 4096
+  UPLOAD_PACKSIZE  = 1000
+
+  def __init__(self, bus=6, dev_addr=0x5a, com_device="COM0", device_type="I2C", gencp_enable=False, force_slave=False):
 
     self.device_type = device_type
     if (platform.system() == "Windows") :
@@ -169,14 +268,14 @@ class dioneCtrl(object):
         self.fr=io.open("/dev/i2c-"+str(bus), "rb", buffering=0)
         self.fw=io.open("/dev/i2c-"+str(bus), "wb", buffering=0)
 
-        fcntl.ioctl(self.fr, IOCTL_I2C_SLAVE, dev_addr)
-        fcntl.ioctl(self.fw, IOCTL_I2C_SLAVE, dev_addr)
+        _slave_ioctl = IOCTL_I2C_SLAVE_FORCE if force_slave else IOCTL_I2C_SLAVE
+        fcntl.ioctl(self.fr, _slave_ioctl, dev_addr)
+        fcntl.ioctl(self.fw, _slave_ioctl, dev_addr)
         fcntl.ioctl(self.fr, IOCTL_I2C_TIMEOUT, 100)
         fcntl.ioctl(self.fw, IOCTL_I2C_TIMEOUT, 100)
     else :
         self.com_device = com_device
 
-    self.last_file_op = -1
     self.gencp_enable = gencp_enable
     self.RequestId = 0x0000
 
@@ -188,6 +287,24 @@ class dioneCtrl(object):
     if (self.device_type == "USB") :
         self.ser.close()
 
+  def close(self):
+    """Release the I2C file descriptors. Idempotent, and safe to call twice.
+
+    open_device()/close_device() only ever acted on the serial port; in I2C mode
+    the two descriptors opened by __init__ used to live until the process died,
+    which leaks one pair per instance in a console or a loop."""
+    for attr in ("fr", "fw"):
+      f = getattr(self, attr, None)
+      if f is not None and not f.closed:
+        f.close()
+
+  def __enter__(self):
+    return self
+
+  def __exit__(self, exc_type, exc, tb):
+    self.close()
+    return False
+
   def write_device(self, out):
     if (self.device_type == "USB") :
         ret = self.ser.write(out)
@@ -196,554 +313,245 @@ class dioneCtrl(object):
         ret = self.fw.write(out)
     return ret
 
-  def read_device(self, len):
+  def read_device(self, nbytes):
     if (self.device_type == "USB") :
-        ret = self.ser.read(len)
+        ret = self.ser.read(nbytes)
         self.ser.flush()
     else :
-        ret = self.fr.read(len)
+        ret = self.fr.read(nbytes)
     return ret
+
+  def _poll_read(self, nbytes):
+    """Read nbytes after a request, retrying up to POLL_ATTEMPTS times on status 0xFFFF."""
+    time.sleep(self.POLL_INTERVAL)
+    data = self.read_device(nbytes)
+    for _ in range(1, self.POLL_ATTEMPTS):
+      if len(data) < 2 or struct.unpack_from('<H', data)[0] != 0xFFFF:
+        break
+      time.sleep(self.POLL_INTERVAL)
+      data = self.read_device(nbytes)
+    return data
+
+  # -------------------------------------------------------------------------
+  # Transport -- one place where the GenCP / raw split and the endianness live.
+  # The six public accessors below are thin wrappers over _read_raw/_write_raw;
+  # keep it that way, a fix applied to one accessor only is a fix half made.
+  # -------------------------------------------------------------------------
+
+  def _gencp_endpoints(self):
+    """The (write, read) endpoints the GenCP helpers expect."""
+    if self.device_type == "USB":
+      return self.ser, self.ser
+    return self.fw, self.fr
+
+  def _u32_fmt(self):
+    """struct format for a 32-bit word: GenCP is big-endian on the wire, the
+    raw protocol little-endian."""
+    return '>I' if self.gencp_enable else '<I'
+
+  def _f32_fmt(self):
+    return '>f' if self.gencp_enable else '<f'
+
+  def _check_status(self, status, what):
+    """Raise on a camera error. Reads used to ignore this entirely and hand back
+    whatever bytes came in, so a failed transfer was indistinguishable from a
+    real value."""
+    if status is None:
+      raise CameraError(f"{what}: no answer from the camera")
+    if status:
+      name = next((k for k, v in GencpStatus.items() if v == status), None)
+      raise CameraError(f"{what} failed with status 0x{status:04X}"
+                    + (f" ({name})" if name else ""))
+
+  def _read_raw(self, reg_addr, nbytes):
+    """Read <nbytes> at <reg_addr> and return them in wire order. Raises
+    CameraError if the camera reports an error."""
+    self.open_device()
+    try:
+      if self.gencp_enable:
+        write_dev, read_dev = self._gencp_endpoints()
+        status, data = self.ReadGencpReg(write_dev, read_dev, reg_addr, nbytes)
+      else:
+        self.write_device(bytearray(reg_addr.to_bytes(4, 'little'))
+                          + bytearray(nbytes.to_bytes(2, 'little')))
+        raw = self._poll_read(2 + nbytes)
+        # The raw protocol has no error packet: on a refused read the CX3
+        # firmware NAKs the endpoint and sends nothing at all, so an empty or
+        # truncated answer *is* the error report.
+        status = struct.unpack_from('<H', raw)[0] if len(raw) >= 2 else None
+        data = bytes(raw[2:])
+    finally:
+      self.close_device()
+
+    self._check_status(status, f"read of 0x{reg_addr:08X}")
+    if len(data) != nbytes:
+      # A success status with the wrong byte count means the answer was cut
+      # short. Say so, rather than letting struct.unpack raise about a buffer
+      # length several frames away from the cause.
+      raise CameraError(f"read of 0x{reg_addr:08X}: got {len(data)} bytes, "
+                        f"expected {nbytes}")
+    return bytes(data)
+
+  def _write_raw(self, reg_addr, payload):
+    """Write <payload> at <reg_addr>. Returns the camera status word, 0 = OK.
+    Writes return their status rather than raising: upload_file() drives the
+    camera through states where a non-zero status is expected and handled."""
+    self.open_device()
+    try:
+      if self.gencp_enable:
+        write_dev, read_dev = self._gencp_endpoints()
+        status = self.WriteGencpReg(write_dev, read_dev, reg_addr, payload)
+      else:
+        self.write_device(bytearray(reg_addr.to_bytes(4, 'little'))
+                          + bytearray(len(payload).to_bytes(2, 'little'))
+                          + bytearray(payload))
+        ack = self._poll_read(2)
+        status = struct.unpack_from('<H', ack)[0] if len(ack) >= 2 else None
+    finally:
+      self.close_device()
+    return status
+
+  # -------------------------------------------------------------------------
+  # Public API
+  # -------------------------------------------------------------------------
 
   def read_reg32(self, reg_addr):
-    self.open_device()
-    time.sleep(0.01)
-
-    if self.gencp_enable:
-        if self.device_type == "USB":
-            write_dev = self.ser
-            read_dev = self.ser
-        else:  # I2C
-            write_dev = self.fw
-            read_dev = self.fr
-        Status, Data = self.ReadGencpReg(write_dev, read_dev, reg_addr, 4)
-        ret = b'\x00\x00' + Data  # Add 2-byte prefix for compatibility
-    else:
-        out=bytearray(reg_addr.to_bytes(4, 'little'))+bytearray([0x04, 0x00])
-        self.write_device(out)
-        time.sleep(0.01)
-        ret=self.read_device(6)
-
-    self.close_device()
-    #print(ret)
-    if self.gencp_enable:
-        val=struct.unpack('>L', ret[2:])
-    else:
-        val=struct.unpack('<L', ret[2:])
-        
-    return val[0]
+    return struct.unpack(self._u32_fmt(), self._read_raw(reg_addr, 4))[0]
 
   def read_reg32f(self, reg_addr):
-    self.open_device()
-    time.sleep(0.01)
+    """Read a 32-bit IEEE-754 float.
 
-    if self.gencp_enable:
-        if self.device_type == "USB":
-            write_dev = self.ser
-            read_dev = self.ser
-        else:  # I2C
-            write_dev = self.fw
-            read_dev = self.fr
-        Status, Data = self.ReadGencpReg(write_dev, read_dev, reg_addr, 4)
-        ret = b'\x00\x00' + Data  # Add 2-byte prefix for compatibility
-    else:
-        out=bytearray(reg_addr.to_bytes(4, 'little'))+bytearray([0x04, 0x00])
-        self.write_device(out)
-        time.sleep(0.01)
-        ret=self.read_device(6)
-
-    self.close_device()
-    #print(ret)
-    if self.gencp_enable:
-        val=struct.unpack('>L', ret[2:])
-    else:
-        val=struct.unpack('<L', ret[2:])
-
-    if (val[0] == 0):
-       return  0.0
-    else :
-       return struct.unpack('!f', bytes.fromhex(f'{val[0]:x}'))[0]
-
-  def write_reg32(self, reg_addr, val):
-    self.open_device()
-    time.sleep(0.01)
-
-    if self.gencp_enable:
-        if self.device_type == "USB":
-            write_dev = self.ser
-            read_dev = self.ser
-        else:  # I2C
-            write_dev = self.fw
-            read_dev = self.fr
-        data = bytearray(val.to_bytes(4, 'big'))
-        Status = self.WriteGencpReg(write_dev, read_dev, reg_addr, data)
-        ret = Status
-    else:
-        out=bytearray(reg_addr.to_bytes(4, 'little')) \
-            +bytearray([0x04, 0x00]) \
-            +bytearray(val.to_bytes(4, 'little'))
-        time.sleep(0.01)
-        ret=self.write_device(out)
-
-    self.close_device()
-    return ret
-
-  def write_reg32f(self, reg_addr, val):
-    self.open_device()
-    time.sleep(0.01)
-
-    if self.gencp_enable:
-        if self.device_type == "USB":
-            write_dev = self.ser
-            read_dev = self.ser
-        else:  # I2C
-            write_dev = self.fw
-            read_dev = self.fr
-        data = bytearray(struct.pack('>f', val))
-        Status = self.WriteGencpReg(write_dev, read_dev, reg_addr, data)
-        ret = Status
-    else:
-        out=bytearray(reg_addr.to_bytes(4, 'little')) \
-            +bytearray([0x04, 0x00]) \
-            +bytearray(struct.pack('<f', val))
-        time.sleep(0.01)
-        ret=self.write_device(out)
-
-    self.close_device()
-    return ret
-
-
-  def ack_stop(self):
-    self.write_reg32(0x80104,2)
-    print(hex(self.read_reg32(0x8010c)))
-
-
-  def ack_start(self):
-    self.write_reg32(0x80104,1)
-    print(hex(self.read_reg32(0x8010c)))
-
-
-  def test_solid_black(self):
-    self.ack_stop()
-    self.write_reg32(0x8012c,0)
-
-
-  def test_solid_color(self, color):
-    self.ack_stop()
-    self.write_reg32(0x8012c,color << 16)
-
+    The previous implementation round-tripped through a hex string
+    (bytes.fromhex(f'{val:x}')), which drops leading zeros and can yield an
+    odd-length string: every value below 0x10000000 raised ValueError or
+    struct.error instead of returning a number -- 6.2 % of all bit patterns,
+    and every integer register read through this method by mistake."""
+    return struct.unpack(self._f32_fmt(), self._read_raw(reg_addr, 4))[0]
 
   def read_buf(self, reg_addr, length):
-    """! reads <length> bytes from <reg_addr>
-    """
+    """Read <length> bytes from <reg_addr>.
 
-    self.open_device()
-    time.sleep(0.01)
+    Returns a 2-byte status header followed by the payload, so callers keep
+    slicing [2:] as they always have."""
+    return b'\x00\x00' + self._read_raw(reg_addr, length)
 
-    if self.gencp_enable:
-        if self.device_type == "USB":
-            write_dev = self.ser
-            read_dev = self.ser
-        else:  # I2C
-            write_dev = self.fw
-            read_dev = self.fr
-        Status, Data = self.ReadGencpReg(write_dev, read_dev, reg_addr, length)
-        ret = b'\x00\x00' + Data  # Add 2-byte prefix for compatibility
-    else:
-        out=bytearray(reg_addr.to_bytes(4, 'little')) \
-            + bytearray(length.to_bytes(2, 'little'))
-        time.sleep(0.01)
-        self.write_device(out)
-        time.sleep(0.01)
-        ret=self.read_device(2+length)
+  def write_reg32(self, reg_addr, val):
+    return self._write_raw(reg_addr, val.to_bytes(4, 'big' if self.gencp_enable else 'little'))
 
-    self.close_device()
-    return ret
-
+  def write_reg32f(self, reg_addr, val):
+    return self._write_raw(reg_addr, struct.pack(self._f32_fmt(), val))
 
   def write_buf(self, reg_addr, buf):
-    """! writes <buf> to <reg_addr>
-    """
+    """Write <buf> to <reg_addr>."""
+    return self._write_raw(reg_addr, buf)
 
-    self.open_device()
-    time.sleep(0.01)
+  # -------------------------------------------------------------------------
+  # Firmware upload
+  # -------------------------------------------------------------------------
 
-    if self.gencp_enable:
-        if self.device_type == "USB":
-            write_dev = self.ser
-            read_dev = self.ser
-        else:  # I2C
-            write_dev = self.fw
-            read_dev = self.fr
-        Status = self.WriteGencpReg(write_dev, read_dev, reg_addr, buf)
-        # No need to read response for write operation
-    else:
-        out=bytearray(reg_addr.to_bytes(4, 'little')) \
-            + bytearray(len(buf).to_bytes(2, 'little')) + buf
-        time.sleep(0.01)
-        self.write_device(out)
-        time.sleep(0.01)
-        # print(self.read_device(2))
+  def _fac_execute_operation(self, file_op):
+    """Set FileOperationSelector to <file_op>, trigger execution, and wait for completion."""
+    WAIT_ATTEMPTS = 20
+    WAIT_INTERVAL = 0.5
 
-    self.close_device()
+    self.write_reg32(0x10010008, file_op)       # FileOperationSelector
+    result = self.write_reg32(0x1001000C, 1)    # FileOperationExecute
+    if result:
+      print(f"\nFile op {file_op}: status 0x{result:04X}")
 
+    for attempt in range(WAIT_ATTEMPTS):
+      time.sleep(WAIT_INTERVAL)
+      result = self.read_reg32(0x10010010)      # FileOperationStatus
 
-  def exec_file_op(self, op):
-    """! execute <op> file operation
+      if result == 2:
+        continue    # BUSY, keep waiting
 
-    sets FileOperationSelector to <op>, sets FileOperationExecute to 1
-    and awaits FileOperationStatus to become 0
-    """
+      if result == 1:
+        print(f'\nFile operation {file_op} failed (status=0x{result:08X})')
+        if attempt:
+          print(f'Remained BUSY for {attempt} attempts ({WAIT_INTERVAL * attempt:.1f}s)')
+        return False
 
-    if op != self.last_file_op :
-      self.last_file_op = op
-      self.write_reg32(0x10010008, op)  # FileOperationSelector
-    self.write_reg32(0x1001000c, 1)     # FileOperationExecute
-    ret = self.read_reg32(0x10010010)   # FileOperationStatus
-    while ret == 2 :
-      time.sleep(0.01)
-      ret = self.read_reg32(0x10010010)
- 
-    if ret != 0 :
-      print( "Failed to execute operation" )
-      return False
-    else :
-      return True
+      return True   # SUCCESS
 
-
-  def open_file(self, idx, write_mode=False):
-    """! open file no. <idx>
-
-    @param write_mode  optional - if True, open file in WRITE mode
-    """
-
-    self.ack_stop()
-    self.write_reg32(0x10010000, idx)  # FileSelector
-    sel = self.read_reg32(0x10010000)
-    if ( sel != idx ) :
-      print( "Failed to select file" )
-      return -1
-    else :
-      print( f'Selected file: {sel}' )
-
-    if not write_mode:
-      self.write_reg32(0x10010004, 0)  # FileOpenMode = read
-    else:
-      self.write_reg32(0x10010004, 1)  # FileOpenMode = write
-    if not self.exec_file_op(0) :    # open
-      return -1
-
-    ret = self.read_reg32(0x10010018)
-    print( f'File size: {ret}' )
-    return ret
-
-
-  def close_file(self):
-    if not self.exec_file_op(1) :    # close
-      print( "Failed to close file" )
-      return False
-    else:
-      return True
-
-
-  def read_file(self, offs, length):
-    """! read current file into FileAccessBuffer
-
-    sets FileAccessOffset to <offs>, FileAccessLength to <length> and
-    executes the file read operation
-    """
-
-    retry = 4
-    tmo = 0.5
-    while retry > 0:
-      try:
-        self.write_reg32(0x1001001c, offs)    # FileAccessOffset
-        self.write_reg32(0x10010020, length)  # FileAccessLength
-        if not self.exec_file_op(2) :         # read
-          print( "Failed to execute read" )
-          return False
-        else:
-          return True
-      except OSError:
-        print( f'Retry: {retry}' )
-        time.sleep(tmo)
-        tmo *= 2
-        retry -= 1
-
-    print( "Failed to execute read" )
+    print(f'\nFile operation {file_op} timed out after {WAIT_ATTEMPTS * WAIT_INTERVAL:.1f}s')
     return False
 
+  def _fac_write_chunk(self, chunk_data, chunk_offset):
+    self.write_reg32(0x1001001C, chunk_offset)
+    self.write_reg32(0x10010020, len(chunk_data))
 
-  def read_filebuf(self, length):
-    """! reads contents of FileAccessBuffer
+    chunk_size = len(chunk_data)
+    packets = chunk_size // self.UPLOAD_PACKSIZE
 
-    According to documentation maximum 1000 bytes can be read
-    with a single transaction. read_filebuf() breaks up the
-    whole read process into 1000-byte chunks.
-    It returns a bytearray.
-    Maximum <length> is 4096.
+    for i in range(packets):
+      self.write_buf(0x10011000 + i * self.UPLOAD_PACKSIZE, chunk_data[:self.UPLOAD_PACKSIZE])
+      chunk_data = chunk_data[self.UPLOAD_PACKSIZE:]
+
+    if chunk_size % self.UPLOAD_PACKSIZE:
+      self.write_buf(0x10011000 + packets * self.UPLOAD_PACKSIZE, chunk_data)
+
+    return self._fac_execute_operation(3)   # WRITE
+
+  def upload_file(self, filepath, selector):
+    """Upload a firmware or application binary to the camera.
+
+    @param filepath  path to the binary package file
+    @param selector  "firmware", "application", or a FAC_SEL enum value
+    @return True on success, False on failure
     """
+    if isinstance(selector, str):
+      selector = FAC_SEL[selector.upper()]
 
-    buf = bytearray([])
-    ofs = 0
-    while length > 0 :
-      read = length
-      if read > 1000 :
-        read = 1000
+    if selector not in (FAC_SEL.FIRMWARE, FAC_SEL.APPLICATION):
+      print(f'Invalid selector {selector}: only FIRMWARE and APPLICATION are supported.')
+      return False
 
-      retry = 4
-      tmo = 0.5
-      while retry > 0:
-        try:
-          ret = self.read_buf(0x10011000 + ofs, read)
-          if ret[0:2] != bytearray([0,0]):
-            print(f'read_buf() failed {ret[0:2]}')
-            return -1
-          buf += ret[2:]
-          break
-        except OSError:
-          print( f'Retry: {retry}' )
-          time.sleep(tmo)
-          tmo *= 2
-          retry -= 1
+    if not os.path.isfile(filepath):
+      print(f'File not found: {filepath}')
+      return False
 
-      if retry == 0:
-        raise OSError
+    with open(filepath, 'rb') as f:
+      blob = f.read()
+    print(f'Uploading {filepath} ({len(blob)} bytes) as {selector}')
 
-      length -= read
-      ofs += read
-    return buf
+    self.write_reg32(0x80104, 0x202)    # stop acquisition
+    time.sleep(1)
 
+    self.write_reg32(0x10010000, int(selector))  # FileSelector
+    self.write_reg32(0x10010004, 1)              # FileOpenMode = write
+    if not self._fac_execute_operation(0):       # OPEN
+      print('Failed to open file for writing.')
+      return False
 
-  def write_filebuf(self, buf):
-    """!
+    filesize   = len(blob)
+    blockcount = filesize // self.UPLOAD_BLOCKSIZE
+    remainder  = filesize % self.UPLOAD_BLOCKSIZE
+    total_chunks = blockcount + (1 if remainder else 0)
 
-    """
+    for i in range(blockcount):
+      blockdata = blob[i * self.UPLOAD_BLOCKSIZE:(i + 1) * self.UPLOAD_BLOCKSIZE]
+      print(f'\rSending chunk {i + 1}/{total_chunks}', end='')
+      if not self._fac_write_chunk(blockdata, i * self.UPLOAD_BLOCKSIZE):
+        print(f'\nFailed at offset 0x{i * self.UPLOAD_BLOCKSIZE:08X}, aborting.')
+        return False
 
-    length = len(buf)
-    ofs = 0
-    while length > 0:
-      wrt = length
-      if wrt > 1000:
-        wrt = 1000
+    if remainder:
+      blockdata = blob[blockcount * self.UPLOAD_BLOCKSIZE:]
+      print(f'\rSending chunk {total_chunks}/{total_chunks}', end='')
+      if not self._fac_write_chunk(blockdata, blockcount * self.UPLOAD_BLOCKSIZE):
+        print(f'\nFailed at offset 0x{blockcount * self.UPLOAD_BLOCKSIZE:08X}, aborting.')
+        return False
 
-      retry = 4
-      tmo = 0.5
-      while retry > 0:
-        try:
-          self.write_buf(0x10011000 + ofs, buf[ofs:ofs+wrt])
-          break
-        except OSError:
-          print( f'Retry: {retry}' )
-          time.sleep(tmo)
-          tmo *= 2
-          retry -= 1
+    if not self._fac_execute_operation(1):  # CLOSE
+      print('Failed to close file.')
+      return False
 
-      if retry == 0:
-        raise OSError
+    return True
 
-      length -= wrt
-      ofs += wrt
-
-
-  def verify_filebuf(self, buf):
-    length = len(buf)
-    buf2 = self.read_filebuf(length)
-    return buf2==buf
-
-
-  def save_file(self, idx, dst, max_len=-1, ofs=0):
-    """! save contents of existing Dione file to filesystem
-
-    @param idx      no. of Dione file to read
-    @param dst      name of filesystem file to write to
-    @param max_len  optional - no. of bytes to be written
-    @param ofs      optional - start offset in Dione file
-
-    it opens the Dione file with self.open_file() and reads it
-    in 4096-byte chunks with self.read_filebuf()
-    """
-
-    f_dst = io.open(dst, "wb")
-
-    length = self.open_file( idx ) - ofs
-
-    if length > 0 :
-      print( f'Length of file #{idx} : {length}' )
-    else :
-      print( "Failed to open file or invalid <ofs>" )
-      return -1
-
-    if max_len >= 0:
-      length = max_len
-      print( f'Limiting file length to {length} bytes' )
-
-    total = 0
-    read = 0
-    col = 0
-
-    while length > 0 :
-      read = length
-      if read > 4096 :
-        read = 4096
-      if not self.read_file(ofs, read) :
-        print( f'Read error at offset {ofs}' )
-        return -1
-
-      f_dst.write(self.read_filebuf(read))
-      total += read
-      ofs += read
-      length -= read
-      col += 1
-      print( ".", end="", flush=True)
-      if col >= 64 :
-        col = 0
-        print()
-
-    print()
-    self.close_file()
-    f_dst.close()
-    print( f'Saved {total} bytes' )
-    return total
-
-
-  def update_file(self, idx, src):
-    """! updates Dione file no. <idx>
-
-    """
-
-    length = os.path.getsize(src)
-    print( f'Size of {src}: {length}' )
-
-    orig_len = self.open_file(idx, 1)
-    print( f'original length: {orig_len}' )
-    if orig_len < 0:
-      return -1
-
-    f_src = io.open(src, "rb")
-
-    ofs = 0
-    total = 0
-    col = 0
-    while length > 0:
-      read = length
-      if read > 4096:
-        read = 4096
-      buf = f_src.read(read)
-
-      retry = 4
-      tmo = 0.5
-      while retry > 0:
-        try:
-          self.last_file_op = 3
-          self.write_reg32(0x10010008, 3)  # FileOperationSelector
-          break
-        except OSError:
-          print( f'Retry: {retry}' )
-          time.sleep(tmo)
-          tmo *= 2
-          retry -= 1
-
-      if retry == 0:
-        print( "Failed to set FileOperationSelector to 'write'" )
-        self.close_file()
-        f_src.close()
-        return -1
-
-      self.write_filebuf(buf)
-      if not self.verify_filebuf(buf):
-        print( f'Verify error at {ofs}' )
-        self.close_file()
-        f_src.close()
-        return -1
-
-      retry = 4
-      tmo = 0.5
-      while retry > 0:
-        try:
-          self.write_reg32(0x1001001c, ofs)     # FileAccessOffset
-          self.write_reg32(0x10010020, read)    # FileAccessLength
-          if not self.exec_file_op(3) :         # write
-            print( "Failed to execute write" )
-            self.close_file()
-            f_src.close()
-            return False
-          else:
-            break
-        except OSError:
-          print( f'Retry: {retry}' )
-          time.sleep(tmo)
-          tmo *= 2
-          retry -= 1
-
-      if retry == 0:
-        print( "Failed to fill FileAccessBuffer" )
-        self.close_file()
-        f_src.close()
-        return -1
-
-      length -= read
-      ofs += read
-      total += read
-      col += 1
-      print( ".", end="", flush=True)
-      if col >= 64 :
-        col = 0
-        print()
-
-    print()
-    self.close_file()
-    f_src.close()
-    print( f'Updated {total} bytes' )
-    return total
-
-
-  def hack_write_file(self, idx, buf_src):
-    buf_len = len(buf_src)
-    ofs = 0
-    start_pad = bytearray([0] * 5)
-    while buf_len > 0:
-      if self.open_file(idx, 1) < 0:
-        print(f'Failed to open file at offset {ofs}')
-        return -1
-
-      chunk = buf_len
-      if chunk > 1024:
-        chunk = 1024
-      self.write_filebuf(start_pad + buf_src[ofs:ofs+chunk])
-
-      retry = 4
-      tmo = 0.5
-      while retry > 0:
-        try:
-          self.write_reg32(0x1001001c, ofs)     # FileAccessOffset
-          self.write_reg32(0x10010020, chunk)   # FileAccessLength
-          if not self.exec_file_op(3) :         # write
-            print(f'Failed to execute write at offset {ofs}')
-            self.close_file()
-            return False
-          else:
-            break
-        except OSError:
-          print( f'Retry: {retry}' )
-          time.sleep(tmo)
-          tmo *= 2
-          retry -= 1
-
-      if retry == 0:
-        print( "Failed to execute write" )
-        self.close_file()
-        return -1
-
-      if not self.close_file():
-        print(f'Failed to close file at offset {ofs}')
-        return -1
-
-      ofs += chunk
-      buf_len -= chunk
-
-    self.close_file()
-    print(f'Written {ofs} bytes')
-
+  # -------------------------------------------------------------------------
+  # GenCP protocol
+  # -------------------------------------------------------------------------
 
   def ComputeCrc(self, Data, ScdDataNumber):
     ComputedCrc_u32 = np.uint32(0)
@@ -763,11 +571,11 @@ class dioneCtrl(object):
 
 
   def ReadGencpReg(self, write_device, read_device, Address, NumberOfByte):
-    MAX_RETRIES = 3
-    SERIAL_TIMEOUT = 300
-    NoRetries = 0
-    ErrFound = 'None'
+    """Return (status, data): the numeric GenCP status word -- 0 on success,
+    None if no usable answer came back -- and the payload bytes.
 
+    The status is a number, not a status name: the raw protocol returns one
+    too, and the callers must not have to tell the two apart."""
     DataToWrite_u16 = [0]*14
     DataToWrite_u16[0] = 0x0100 # Preamble
     DataToWrite_u16[3] = 0x0000 # Channel ID
@@ -803,36 +611,28 @@ class dioneCtrl(object):
     write_device.write(ByteArray)
 
     self.RequestId +=1
-    # get current time in ms
-    start = int(round(time.time() * 1000))
 
-    i = 0
+    # read() already blocks until the whole answer arrives or the port timeout
+    # expires; the busy-wait that used to sit here could not add a single byte.
     resp = read_device.read((NumberOfByte + 16))
-    while (((round(time.time() * 1000) - start) < SERIAL_TIMEOUT) and len(resp) < (NumberOfByte + 16)):
-      pass
 
-    Status = 'Error'
-    Data = b'\xFF'
+    # GenCP ack layout (16-byte prefix + CCD, then the payload):
+    #   0-1 preamble  2-3 CCD CRC  4-5 SCD CRC  6-7 channel id
+    #   8-9 status    10-11 cmd id  12-13 SCD length  14-15 request id
+    # On error the camera sets the SCD length to 0, so a bare 16-byte answer is
+    # a valid (failed) reply, not a truncated one.
+    if len(resp) not in (16, NumberOfByte + 16):
+      return None, b''
 
-    if(len(resp) == (NumberOfByte + 16) or len(resp) == 16):
-      for key,val in GencpStatus.items():
-        if val == ((resp[8] << 8) + resp[9]):
-          Status = key
-
-      if len(resp) == (NumberOfByte + 16):
-        for x in range(NumberOfByte):
-          Data = resp[16:(16+NumberOfByte)]
-      else:
-        Data = b'\x00'
+    Status = (resp[8] << 8) + resp[9]
+    Data = resp[16:(16 + NumberOfByte)] if len(resp) > 16 else b''
 
     return Status,Data
 
 
   def WriteGencpReg(self, write_device, read_device, Address, WrittenData):
-    MAX_RETRIES = 3
-    SERIAL_TIMEOUT = 300
-    NoRetries = 0
-    ErrFound = 'None'
+    """Return the numeric GenCP status word, 0 on success, None if no usable
+    answer came back. See ReadGencpReg for why it is a number."""
     Data = 0
 
     WrittenDataArray = WrittenData
@@ -891,21 +691,242 @@ class dioneCtrl(object):
     write_device.write(ByteArray)
 
     self.RequestId +=1
-    # get current time in ms
-    start = int(round(time.time() * 1000))
 
-    i = 0
     resp = read_device.read(16)
-    while (((round(time.time() * 1000) - start) < SERIAL_TIMEOUT) and len(resp) < 16):
-      pass
 
-    Status = 'Error'
+    # Same ack layout as in ReadGencpReg; a write ack carries no payload.
+    if len(resp) != 16:
+      return None
 
-    if(len(resp) == 16):
-      for key,val in GencpStatus.items():
-        if val == ((resp[8] << 8) + resp[9]):
-          Status = key
-
-    return Status
+    return (resp[8] << 8) + resp[9]
 
 
+def hexdump(data, base_addr=0, width=16):
+  """Render <data> as address / hex / ASCII lines, hexdump -C style.
+
+  Most of what read_buf() returns is text -- firmware version strings, model
+  names, serial numbers -- padded with 0x00 or 0xFF. A bare run of hex bytes
+  hides that; the ASCII column makes it readable without decoding by hand.
+
+  base_addr is the register address of data[0], so the left column names where
+  each byte actually lives instead of numbering an offset into the answer."""
+  lines = []
+  for off in range(0, len(data), width):
+    chunk = data[off:off + width]
+    cells = [f'{b:02X}' for b in chunk] + ['  '] * (width - len(chunk))
+    # Gap in the middle of the row, and padded cells on a short last row, so
+    # the ASCII column stays aligned whatever the length read.
+    hexa = ' '.join(cells[:width // 2]) + '  ' + ' '.join(cells[width // 2:])
+    text = ''.join(chr(b) if 0x20 <= b < 0x7F else '.' for b in chunk)
+    lines.append(f'{base_addr + off:08X}  {hexa}  |{text}|')
+  return '\n'.join(lines)
+
+
+if __name__ == "__main__":
+  import argparse
+  import code
+  import sys
+
+  try:
+    import readline  # noqa: F401 - enables arrow keys / history in the console
+  except ImportError:
+    pass
+
+  hex_int = lambda x: int(x, 0)
+
+  parser = argparse.ArgumentParser(
+      description='Dione camera control',
+      formatter_class=argparse.RawDescriptionHelpFormatter,
+  )
+
+  # Connection options -- exactly one per dioneCtrl() constructor parameter, and
+  # named the same, so that a command line and an interactive call read alike:
+  #     dioneCtrl(bus=7, dev_addr=0x5d, device_type="I2C", gencp_enable=False)
+  #     dioneCtrl.py --bus 7 --dev-addr 0x5d --device-type I2C
+  # Keep that mapping when adding a parameter on either side.
+  #
+  # The address option must NOT be called --addr: every subcommand takes a
+  # positional 'addr' (a register address), both would land on the same
+  # namespace attribute, and the positional -- parsed second -- would win. The
+  # register address then reached the I2C_SLAVE ioctl, which rejected it with
+  # EINVAL. That was the state of the CLI until this was fixed.
+  #
+  # These options are added twice: on the main parser with their real defaults,
+  # and again on every subcommand with default=argparse.SUPPRESS, so that both
+  # orders work --
+  #     dioneCtrl.py --bus 9 --dev-addr 0x5a upload pkg.bin application
+  #     dioneCtrl.py upload pkg.bin application --bus 9 --dev-addr 0x5a
+  # The second is the order people actually type (the command first, then how to
+  # reach the camera), and with the options declared only on the main parser
+  # argparse hands everything after the subcommand name to the subparser, which
+  # knows nothing about them: they come back as "unrecognized arguments".
+  #
+  # SUPPRESS on the subcommand copies is what makes the duplication safe. A
+  # subparser parses into a namespace of its own and then copies every attribute
+  # that namespace holds onto the main one (CPython's
+  # _SubParsersAction.__call__), so a real default there would silently
+  # overwrite an option given *before* the subcommand with that default --
+  # `--bus 9 upload ...` would go back to bus 6. SUPPRESS leaves the attribute
+  # unset unless the user typed it, so the main parser's value survives.
+  def add_conn_options(p, suppress=False):
+    default = (lambda v: argparse.SUPPRESS) if suppress else (lambda v: v)
+    conn = p.add_argument_group('connection')
+    conn.add_argument('--device-type', choices=['I2C', 'USB'], default=default('I2C'),
+                      help='Communication type (default: I2C)')
+    conn.add_argument('--bus', type=int, default=default(6),
+                      help='I2C bus number (default: 6)')
+    conn.add_argument('--dev-addr', type=hex_int, default=default(0x5A),
+                      help='I2C device address (default: 0x5A)')
+    conn.add_argument('--com-device', default=default('COM0'),
+                      help='Serial port for USB mode (default: COM0)')
+    conn.add_argument('--gencp-enable', action='store_true', default=default(False),
+                      help='Use GenCP framing (default: off). The Dione does not '
+                           'serve GenCP over I2C -- leave this off in I2C mode.')
+    conn.add_argument('--force-slave', action='store_true', default=default(False),
+                      help='Claim the I2C address even if a kernel driver holds it '
+                           '(I2C_SLAVE_FORCE)')
+
+  add_conn_options(parser)
+
+  subparsers = parser.add_subparsers(dest='command')
+
+  # upload
+  p = subparsers.add_parser('upload', help='Upload a firmware or application file')
+  p.add_argument('file', help='Path to the binary package file')
+  p.add_argument('type', choices=['firmware', 'application'],
+                 help='"firmware" (FAC_SEL=1) or "application" (FAC_SEL=2)')
+
+  # read_reg32
+  p = subparsers.add_parser('read_reg32', help='Read a 32-bit integer register')
+  p.add_argument('addr', type=hex_int, help='Register address (e.g. 0x20001004)')
+
+  # read_reg32f
+  p = subparsers.add_parser('read_reg32f', help='Read a 32-bit float register')
+  p.add_argument('addr', type=hex_int, help='Register address')
+
+  # write_reg32
+  p = subparsers.add_parser('write_reg32', help='Write a 32-bit integer register')
+  p.add_argument('addr', type=hex_int, help='Register address')
+  p.add_argument('val',  type=hex_int, help='Value to write (decimal or 0x hex)')
+
+  # write_reg32f
+  p = subparsers.add_parser('write_reg32f', help='Write a 32-bit float register')
+  p.add_argument('addr', type=hex_int, help='Register address')
+  p.add_argument('val',  type=float,   help='Float value to write')
+
+  # read_buf
+  p = subparsers.add_parser('read_buf', help='Read a byte buffer (hex + ASCII)')
+  p.add_argument('addr',   type=hex_int, help='Register address')
+  p.add_argument('length', type=int,     help='Number of bytes to read')
+
+  # read_string
+  p = subparsers.add_parser('read_string', help='Read a byte buffer and print as string')
+  p.add_argument('addr',   type=hex_int, help='Register address')
+  p.add_argument('length', type=int,     help='Number of bytes to read')
+
+  # Applied to every subcommand in one loop rather than at each add_parser()
+  # call, so a subcommand added later cannot be forgotten -- the failure mode is
+  # a confusing "unrecognized arguments" on that one command only.
+  for sub in subparsers.choices.values():
+    add_conn_options(sub, suppress=True)
+
+  # --addr was renamed --dev-addr to break the collision described above, but it
+  # is the name still in shell histories and in older notes. argparse would only
+  # say "unrecognized arguments", which does not point at the new name.
+  for arg in sys.argv[1:]:
+    if arg == '--addr' or arg.startswith('--addr='):
+      parser.error("--addr no longer exists: use --dev-addr for the camera's I2C "
+                   "address. It was renamed because it collided with the 'addr' "
+                   "register argument taken by every subcommand.")
+
+  args = parser.parse_args()
+
+  if args.command:
+    # Every failure path below must exit non-zero: a caller in a shell script
+    # has no other way to tell a written register from a refused one. Errors are
+    # reported as one line on stderr rather than as a Python traceback -- an
+    # unreachable bus or a wrong address is a user mistake, not a crash.
+    def fail(msg):
+      print(f'Error: {msg}', file=sys.stderr)
+      sys.exit(1)
+
+    try:
+      with dioneCtrl(
+          bus=args.bus,
+          dev_addr=args.dev_addr,
+          com_device=args.com_device,
+          device_type=args.device_type,
+          gencp_enable=args.gencp_enable,
+          force_slave=args.force_slave,
+      ) as cam:
+
+        if args.command == 'upload':
+          if cam.upload_file(args.file, args.type):
+            print('\nUpload complete. Power cycle the camera to apply the update.')
+          else:
+            fail('upload failed.')
+
+        elif args.command == 'read_reg32':
+          val = cam.read_reg32(args.addr)
+          print(f'0x{val:08X}  ({val})')
+
+        elif args.command == 'read_reg32f':
+          print(cam.read_reg32f(args.addr))
+
+        elif args.command in ('write_reg32', 'write_reg32f'):
+          writer = cam.write_reg32 if args.command == 'write_reg32' else cam.write_reg32f
+          status = writer(args.addr, args.val)
+          if status:
+            fail(f'write to 0x{args.addr:08X} refused, status 0x{status:04X}')
+          print('OK')
+
+        elif args.command == 'read_buf':
+          data = cam.read_buf(args.addr, args.length)
+          print(hexdump(data[2:], args.addr))            # skip 2-byte status header
+
+        elif args.command == 'read_string':
+          data = cam.read_buf(args.addr, args.length)
+          print(data[2:].decode('utf-8', errors='replace').rstrip('\x00'))
+
+    except CameraError as e:
+      fail(str(e))
+    except FileNotFoundError as e:
+      fail(f'{e.filename}: no such device -- check --bus (I2C) or --com-device (USB).')
+    except PermissionError as e:
+      fail(f'{e.filename}: permission denied -- run as root or join the i2c group.')
+    except OSError as e:
+      # pyserial raises SerialException, a subclass of OSError, so a missing
+      # port used to be answered with I2C advice about --dev-addr.
+      if args.device_type == 'USB':
+        fail(f'{e.strerror or e} -- check --com-device.')
+      fail(f'{e.strerror or e} -- check --dev-addr, and whether a kernel driver '
+           f'already holds the address (--force-slave).')
+
+  else:
+    banner = (
+        "Xenics Dione camera control console\n"
+        "  print(__doc__)    full documentation\n"
+        "  help(dioneCtrl)   class and method reference\n"
+        "\n"
+        "Example: cam = dioneCtrl(dev_addr=0x5b, bus=9, device_type=\"I2C\", gencp_enable=False)\n"
+        "\n"
+        "CLI commands (run outside this console):\n"
+        "  python dioneCtrl.py [connection options] <command> [connection options]\n"
+        "\n"
+        "  Connection options carry the same names as the constructor arguments above,\n"
+        "  and may be given before or after the command:\n"
+        "  --bus N  --dev-addr 0xNN  --device-type I2C|USB  --com-device COMx\n"
+        "  --gencp-enable  --force-slave\n"
+        "\n"
+        "  In I2C mode the Dione speaks the plain register protocol, not GenCP:\n"
+        "  leave --gencp-enable off. Upload works over plain I2C.\n"
+        "\n"
+        "  read_reg32   <addr>              Read 32-bit integer\n"
+        "  read_reg32f  <addr>              Read 32-bit float\n"
+        "  write_reg32  <addr> <val>        Write 32-bit integer\n"
+        "  write_reg32f <addr> <val>        Write 32-bit float\n"
+        "  read_buf     <addr> <length>     Read byte buffer (hex output)\n"
+        "  read_string  <addr> <length>     Read byte buffer (string output)\n"
+        "  upload       <file> firmware|application\n"
+    )
+    code.interact(banner=banner, local=dict(globals(), **locals()))
