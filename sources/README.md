@@ -11,7 +11,7 @@ Commands to build, install or clean the kernel modules on target :
 <pre>
 ./build.sh make
 ./build.sh install
-./build.sh clean
+./build.sh distclean
 </pre>
 
 
