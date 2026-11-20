@@ -219,19 +219,42 @@ dtoverlay=dione-ir,cam1
 **RPi4:** the video device is always `/dev/video0`.
 
 **RPi5:** the video device index depends on which ports are active and the driver probe order.
-Use the provided script to retrieve the video device and the associated I2C character device for each port:
-<pre>
-# CAM1 (default)
-$ eg_get_video_device_rpi5.sh
-/dev/video8
-/dev/eg-ec-i2c-11-0016
+Use the provided script to report the video and I2C control devices, sensor resolution,
+pixel format, and ready-to-run V4L2 capture and GStreamer display commands:
 
-# CAM0
-$ eg_get_video_device_rpi5.sh 0
-/dev/video16
-/dev/eg-ec-i2c-10-0016
-</pre>
+```sh
+eg_get_video_device_rpi5.sh      # All connected EG cameras, in CAM0/CAM1 order
+eg_get_video_device_rpi5.sh 0    # CAM0 only
+eg_get_video_device_rpi5.sh 1    # CAM1 only
+```
 
-The script outputs two lines: the V4L2 capture device and the I2C character device exposed by the camera driver (used for direct register access).
+The script locates each sensor through the Media Controller graph, then reads its
+active pad-0 format with `v4l2-ctl --get-subdev-fmt`. It uses the numeric media-bus
+code even if `media-ctl -p` displays `unknown`. The capture node's
+`--get-fmt-video` can still report a default Bayer format or a previous selection;
+this is shown separately and is not used to infer the camera's format.
+The generated commands select the matching resolution and pixel format.
+
+With the EG RP1-CFE patches, the Y16 sensor bus code maps to `Y16 -BE` for capture
+and `GRAY16_BE` for GStreamer. The script checks that the capture driver advertises
+the required format. An unknown bus code or missing format produces an error
+instead of a guessed streaming command.
+
+Discovery does not configure the video nodes or start streaming. Run the printed
+commands separately; the GStreamer command requires a graphical session. For a
+headless capture/conversion check, replace `autovideosink` with `fakesink`.
+
+For device-only output, use `--devices-only`. With an explicit port this preserves
+the two bare lines (video node, then I2C control node); with all ports, each pair
+is labelled CAM0 or CAM1:
+
+```sh
+eg_get_video_device_rpi5.sh 0 --devices-only
+```
+
+An unused port is omitted when listing all ports. The script returns a nonzero
+status if no requested camera is found, a device mapping is ambiguous, or the
+requested format information cannot be obtained. Video/media indices depend on
+probe order and must not be used as physical port identifiers.
 
 Refer to `sources/streaming_examples.txt` for capture and streaming commands.

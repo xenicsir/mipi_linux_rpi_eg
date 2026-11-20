@@ -4,12 +4,16 @@
 #                                                                              #
 #  RPi4 : always /dev/video0                                                  #
 #                                                                              #
-#  RPi5 : variable — use the script to find the device for each port:         #
-#           eg_get_video_device_rpi5.sh      → CAM1 (default)                 #
+#  RPi5 : variable — report devices, sensor formats and stream commands:         #
+#           eg_get_video_device_rpi5.sh      → all connected ports (default)  #
 #           eg_get_video_device_rpi5.sh 0    → CAM0                           #
 #           eg_get_video_device_rpi5.sh 1    → CAM1                           #
 #                                                                              #
 ################################################################################
+
+# The RPi5 helper reads the active sensor format rather than the video node's
+# potentially stale default. Use --devices-only for the original device listing.
+# Its generated GStreamer commands include GRAY16_BE when advertised by the driver.
 
 ================================================================================
 INSTALLATION
